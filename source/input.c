@@ -1293,7 +1293,7 @@ int input_get_guess(double *xguess,
       break;
     case Omega_scf:
       /* *
-       * This guess is arbitrary, something nice using WKB should be implemented.
+       * This guess is arbitrary, something nice using WK should be implemented.
        * Version 2 uses a fit
        * xguess[index_guess] = 1.77835*pow(ba.Omega0_scf,-2./7.);
        * dxdy[index_guess] = -0.5081*pow(ba.Omega0_scf,-9./7.)`;
@@ -2648,6 +2648,33 @@ int input_read_parameters_species(struct file_content *pfc,
   {
     ppt->three_cvis2_ur = 3. * param2;
   }
+
+  /* ---- Neutrino self-interaction strength ---- */
+  /* (added by Magnus, 2025-11-01) */
+
+  class_call(parser_read_double(pfc,"G_eff_ur",&ppt->G_eff_ur,&flag1,errmsg),
+             errmsg,
+             errmsg);
+  class_call(parser_read_double(pfc,"log10_G_eff_ur",&ppt->G_eff_ur,&flag2,errmsg),
+             errmsg,
+             errmsg);
+
+  if (flag2 == _TRUE_) {
+    class_test(flag1 == _TRUE_, errmsg,
+               "You cannot enter both log10_G_eff_ur and G_eff_ur; choose one");
+    ppt->G_eff_ur = pow(10.0, ppt->G_eff_ur);
+  }
+  else if (flag1 == _FALSE_ && flag2 == _FALSE_) {
+    ppt->G_eff_ur = 0.;  /* default: no interaction */
+  }
+
+  /* Optional: print for debugging */
+  if (ppt->G_eff_ur != 0.) {
+    printf(" -> Parsed G_eff_ur = %e\n", ppt->G_eff_ur);
+  }
+  /* ------------------------------------------- */
+
+
 
   /** 4) Omega_0_cdm (CDM) */
   /* Read */
