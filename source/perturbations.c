@@ -10389,6 +10389,38 @@ int perturbations_derivs(double tau,
       }
     }
 
+    /* --- Added by Magnus: Neutrino self-interaction rate --- */
+    double taudot_Geff = pow(a,-4)
+                        * pow(pow(4./11.,1./3.)*pba->T_cmb*_k_B_,5)
+                        * pow(ppt->G_eff_ur/(1e12*_eV_*_eV_),2)
+                        * (2.*_PI_/_h_P_)/_c_*_Mpc_over_m_;
+    taudot_Geff = MIN(taudot_Geff, a_prime_over_a * 1e9);  // limit to avoid instability
+
+    //debugging output
+    if (ppt->G_eff_ur != 0.) {
+      printf("DEBUG: tau=%e, k=%e, taudot_Geff=%e\n", tau, k, taudot_Geff);
+    }
+
+
+    /* ------------------------------------------------------- */
+
+
+    /* --- Added by Magnus: Neutrino self-interaction damping --- */
+    if (pba->has_ur == _TRUE_) {
+      if (ppw->approx[ppw->index_ap_rsa] == (int)rsa_off) {
+
+        /* Damping for shear (ℓ=2) */
+        dy[pv->index_pt_shear_ur] -= taudot_Geff * y[pv->index_pt_shear_ur];
+
+        /* Damping for higher multipoles (ℓ>=3) */
+        for (l = 3; l <= pv->l_max_ur; l++) {
+          dy[pv->index_pt_delta_ur + l] -= taudot_Geff * y[pv->index_pt_delta_ur + l];
+        }
+      }
+    }
+    /* ------------------------------------------------------- */
+
+
     /** - ---> non-cold dark matter (ncdm): massive neutrinos, WDM, etc. */
     // TBC: curvature in all ncdm
     if (pba->has_ncdm == _TRUE_)
