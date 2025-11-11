@@ -37,7 +37,7 @@ with open(os.path.join(include_folder, 'common.h'), 'r') as v_file:
             break
 
 # Define cython extension and fix Python version
-classy_ext = Extension("classy", [os.path.join(classy_folder, "classy.pyx")],
+classy_ext = Extension("classy_NEDE", [os.path.join(classy_folder, "classy.pyx")],
                            include_dirs=[nm.get_include(), include_folder, heat_folder, recfast_folder, hyrec_folder],
                            libraries=liblist,
                            library_dirs=[root_folder, GCCPATH],
@@ -49,7 +49,7 @@ import sys
 classy_ext.cython_directives = {'language_level': "3" if sys.version_info.major>=3 else "2"}
 
 setup(
-    name='classy',
+    name='classy_NEDE',
     version=VERSION,
     description='Python interface to the Cosmological Boltzmann code CLASS',
     url='http://www.class-code.net',

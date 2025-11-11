@@ -2649,30 +2649,27 @@ int input_read_parameters_species(struct file_content *pfc,
     ppt->three_cvis2_ur = 3. * param2;
   }
 
-  /* ---- Neutrino self-interaction strength ---- */
-  /* (added by Magnus, 2025-11-01) */
 
-  class_call(parser_read_double(pfc,"G_eff_ur",&ppt->G_eff_ur,&flag1,errmsg),
-             errmsg,
-             errmsg);
-  class_call(parser_read_double(pfc,"log10_G_eff_ur",&ppt->G_eff_ur,&flag2,errmsg),
-             errmsg,
-             errmsg);
+  /* ---- Massive neutrino self-interaction strength added by Magnus 9/11 ---- */
+  class_call(parser_read_double(pfc,"G_eff_ncdm",&ppt->G_eff_ncdm,&flag1,errmsg),
+            errmsg, errmsg);
+  class_call(parser_read_double(pfc,"log10_G_eff_ncdm",&ppt->G_eff_ncdm,&flag2,errmsg),
+            errmsg, errmsg);
 
   if (flag2 == _TRUE_) {
     class_test(flag1 == _TRUE_, errmsg,
-               "You cannot enter both log10_G_eff_ur and G_eff_ur; choose one");
-    ppt->G_eff_ur = pow(10.0, ppt->G_eff_ur);
+      "You cannot enter both log10_G_eff_ncdm and G_eff_ncdm; choose one");
+    ppt->G_eff_ncdm = pow(10.0, ppt->G_eff_ncdm);
   }
   else if (flag1 == _FALSE_ && flag2 == _FALSE_) {
-    ppt->G_eff_ur = 0.;  /* default: no interaction */
+    ppt->G_eff_ncdm = 0.0; /* default: no massive-ν self-interaction */
   }
 
-  /* Optional: print for debugging */
-  if (ppt->G_eff_ur != 0.) {
-    printf(" -> Parsed G_eff_ur = %e\n", ppt->G_eff_ur);
-  }
-  /* ------------------------------------------- */
+  /* --- Debug print to confirm reading --- */
+  printf("DEBUG: read G_eff_ncdm = %e (flag1=%d, flag2=%d)\n",
+        ppt->G_eff_ncdm, flag1, flag2);
+
+  /*  --------------------------------   */
 
 
 

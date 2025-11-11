@@ -9546,6 +9546,34 @@ int perturbations_print_variables(double tau,
   return _SUCCESS_;
 }
 
+
+/* --- Helper: taudot from G_eff in 1/Mpc units added by Magnus --------------------------- */
+static inline double taudot_Geff_1_over_Mpc(double a,
+                                            double a_prime_over_a,
+                                            const struct background * pba,
+                                            double Geff,
+                                            double relativistic_weight)
+/* relativistic_weight = 1 for massless; for massive use (1+w_ncdm) or (q/epsilon)^2 */
+{
+  if (Geff <= 0.0 || relativistic_weight <= 0.0) return 0.0;
+
+  double taudot =
+      pow(a, -4)
+    * pow( pow(4.0/11.0, 1.0/3.0) * pba->T_cmb * _k_B_, 5 )
+    * pow( Geff / (1e12 * _eV_ * _eV_), 2 )
+    * (2.0 * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
+
+  taudot *= relativistic_weight;
+
+  if (taudot > a_prime_over_a * 1e9) taudot = a_prime_over_a * 1e9;
+
+  return taudot;
+}
+/* ----------------------------------------------------------------------- */
+
+
+
+
 /**
  * Compute derivative of all perturbations to be integrated
  *
@@ -10397,9 +10425,9 @@ int perturbations_derivs(double tau,
     taudot_Geff = MIN(taudot_Geff, a_prime_over_a * 1e9);  // limit to avoid instability
 
     //debugging output
-    if (ppt->G_eff_ur != 0.) {
-      printf("DEBUG: tau=%e, k=%e, taudot_Geff=%e\n", tau, k, taudot_Geff);
-    }
+    //if (ppt->G_eff_ur != 0.) {
+      //printf("DEBUG: tau=%e, k=%e, taudot_Geff=%e\n", tau, k, taudot_Geff);
+    //}
 
 
     /* ------------------------------------------------------- */
@@ -10418,10 +10446,65 @@ int perturbations_derivs(double tau,
         }
       }
     }
+
     /* ------------------------------------------------------- */
+
+    /* --- Added by Magnus: Neutrino self-interaction damping --- */
+    if (ppt->G_eff_ur > 0.) {
+
+      double taudot_Geff = pow(a, -4)
+                          * pow(pow(4./11., 1./3.) * pba->T_cmb * _k_B_, 5)
+                          * pow(ppt->G_eff_ur / (1e12 * _eV_ * _eV_), 2)
+                          * (2. * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
+
+      taudot_Geff = MIN(taudot_Geff, a_prime_over_a * 1e9);
+
+      if (ppw->approx[ppw->index_ap_rsa] == (int)rsa_off) {
+        dy[pv->index_pt_shear_ur] -= taudot_Geff * y[pv->index_pt_shear_ur];
+        for (l = 3; l <= pv->l_max_ur; l++) {
+          dy[pv->index_pt_delta_ur + l] -= taudot_Geff * y[pv->index_pt_delta_ur + l];
+        }
+      }
+    }
+    /* ----------------------------------------------------------- */
+
+    
+
 
 
     /** - ---> non-cold dark matter (ncdm): massive neutrinos, WDM, etc. */
+
+    /* ------------------------------------------------------- */
+    /* --- Added by Magnus: Massive neutrino self-interaction damping --- */
+    /*Before next function if (pba->has_ncdm) inserted code is a global damping correction for any massive neutrinos present */
+
+    if (pba->has_ncdm == _TRUE_ && ppt->G_eff_ncdm > 0.) {
+
+      double taudot_Geff_ncdm = pow(a, -4)
+                              * pow(pow(4./11., 1./3.) * pba->T_cmb * _k_B_, 5)
+                              * pow(ppt->G_eff_ncdm / (1e12 * _eV_ * _eV_), 2)
+                              * (2. * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
+
+      taudot_Geff_ncdm = MIN(taudot_Geff_ncdm, a_prime_over_a * 1e9);
+
+      /* Apply damping to anisotropic stress and higher multipoles */
+      for (n_ncdm = 0; n_ncdm < pv->N_ncdm; n_ncdm++) {
+        if (ppw->approx[ppw->index_ap_ncdmfa] == (int)ncdmfa_off) {
+          for (index_q = 0; index_q < pv->q_size_ncdm[n_ncdm]; index_q++) {
+            int start_index = pv->index_pt_psi0_ncdm1
+                            + (pv->l_max_ncdm[n_ncdm] + 1) * index_q
+                            + n_ncdm * (pv->l_max_ncdm[n_ncdm] + 1) * pv->q_size_ncdm[n_ncdm];
+
+            for (l = 2; l <= pv->l_max_ncdm[n_ncdm]; l++) {
+              dy[start_index + l] -= taudot_Geff_ncdm * y[start_index + l];
+            }
+          }
+        }
+      }
+    }
+    /* ------------------------------------------------------- */
+
+
     // TBC: curvature in all ncdm
     if (pba->has_ncdm == _TRUE_)
     {
@@ -10499,6 +10582,33 @@ int perturbations_derivs(double tau,
             dy[idx + 2] = -3.0 * (a_prime_over_a * (2. / 3. - ca2_ncdm - pseudo_p_ncdm / p_ncdm_bg / 3.) + 1. / tau) * y[idx + 2] + 8.0 / 3.0 * cvis2_ncdm / (1.0 + w_ncdm) * s_l[2] * (y[idx + 1] + metric_ufa_class);
           }
 
+
+          /* --- Added by Magnus: Massive neutrino self-interaction damping --- */
+          if (ppt->G_eff_ncdm > 0.0) {
+
+            double taudot_Geff_ncdm = pow(a, -4)
+                                    * pow(pow(4./11., 1./3.) * pba->T_cmb * _k_B_, 5)
+                                    * pow(ppt->G_eff_ncdm / (1e12 * _eV_ * _eV_), 2)
+                                    * (2. * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
+
+            taudot_Geff_ncdm = MIN(taudot_Geff_ncdm, a_prime_over_a * 1e9);
+
+            // Damping factor decreases as neutrinos become non-relativistic
+            double relativistic_factor = (1.0 + w_ncdm);
+            taudot_Geff_ncdm *= relativistic_factor;
+
+            // Apply damping to shear term (ℓ=2)
+            dy[idx + 2] -= 0.40 * taudot_Geff_ncdm * y[idx + 2];
+
+            // Debug print for early times
+            //if (tau < 1e4 && k < 1e-3) {
+            //  printf("DEBUG[ncdmfa]: tau=%.3e, k=%.3e, taudot_Geff_ncdm=%.3e, w_ncdm=%.3f\n",
+            //        tau, k, taudot_Geff_ncdm, w_ncdm);
+            //}
+          }
+          /* --------------------------------------------------------------- */
+
+
           /** - -----> jump to next species */
 
           idx += pv->l_max_ncdm[n_ncdm] + 1;
@@ -10538,6 +10648,37 @@ int perturbations_derivs(double tau,
             /** - -----> ncdm shear for given momentum bin */
 
             dy[idx + 2] = qk_div_epsilon / 5.0 * (2 * s_l[2] * y[idx + 1] - 3. * s_l[3] * y[idx + 3]) - s_l[2] * metric_shear * 2. / 15. * dlnf0_dlnq;
+
+            /* --- Added by Magnus: Momentum-dependent damping for massive neutrino self-interactions --- */
+            if (ppt->G_eff_ncdm > 0.0) {
+
+              // Compute conformal interaction rate (same prefactors as in fluid case)
+              double taudot_Geff_ncdm = pow(a, -4)
+                                        * pow(pow(4./11., 1./3.) * pba->T_cmb * _k_B_, 5)
+                                        * pow(ppt->G_eff_ncdm / (1e12 * _eV_ * _eV_), 2)
+                                        * (2. * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
+
+              // Limit to avoid numerical instability
+              taudot_Geff_ncdm = MIN(taudot_Geff_ncdm, a_prime_over_a * 1e9);
+
+              // Momentum-aware relativistic suppression factor (Option B)
+              double q_over_eps = q / epsilon;
+              taudot_Geff_ncdm *= q_over_eps * q_over_eps;  // vanishes when neutrinos non-relativistic
+
+              // Apply damping to shear and higher multipoles
+              dy[idx + 2] -= 0.40 * taudot_Geff_ncdm * y[idx + 2];
+              for (l = 3; l < pv->l_max_ncdm[n_ncdm]; l++) {
+                dy[idx + l] -= taudot_Geff_ncdm * y[idx + l];
+              }
+
+              // Optional debug (only for small k and early times)
+              //if (tau < 1e4 && k < 1e-3) {
+              //  printf("DEBUG[ncdm_off]: tau=%.3e, k=%.3e, q/eps=%.3f, taudot=%.3e\n",
+              //        tau, k, q_over_eps, taudot_Geff_ncdm);
+              //}
+            }
+            /* ----------------------------------------------------------------------------- */
+
 
             /** - -----> ncdm l>3 for given momentum bin */
 
