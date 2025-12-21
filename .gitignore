@@ -1,3 +1,10 @@
+# CLASS / Magnus outputs
+Magnus_files/**/outputs_*/
+Magnus_files/**/plots*/
+Magnus_files/**/run_*/
+Magnus_files/**/output_*
+Magnus_files/**/unused_parameters
+Magnus_files/comparison_NEDE_SInu_RTA_table/
 output/
 *~
 build/
