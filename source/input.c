@@ -2672,6 +2672,32 @@ int input_read_parameters_species(struct file_content *pfc,
   /*  --------------------------------   */
 
 
+  /* ---- UR neutrino self-interaction strength (added now to match CLASSpp) ----  Magnus 21/12*/
+  flag1 = _FALSE_;
+  flag2 = _FALSE_;
+
+  class_call(parser_read_double(pfc,"G_eff_ur",&ppt->G_eff_ur,&flag1,errmsg),
+            errmsg, errmsg);
+  class_call(parser_read_double(pfc,"log10_G_eff_ur",&ppt->G_eff_ur,&flag2,errmsg),
+            errmsg, errmsg);
+
+  if (flag2 == _TRUE_) {
+    class_test(flag1 == _TRUE_, errmsg,
+      "You cannot enter both log10_G_eff_ur and G_eff_ur; choose one");
+    ppt->G_eff_ur = pow(10.0, ppt->G_eff_ur);
+  }
+  else if (flag1 == _FALSE_ && flag2 == _FALSE_) {
+    ppt->G_eff_ur = 0.0; /* default: no UR self-interaction */
+  }
+
+  /* --- Debug print to confirm reading --- */
+  /*printf("DEBUG: read G_eff_ur = %e (flag1=%d, flag2=%d)\n",
+        ppt->G_eff_ur, flag1, flag2);
+
+  /*  --------------------------------   */
+
+
+
 
   /** 4) Omega_0_cdm (CDM) */
   /* Read */
