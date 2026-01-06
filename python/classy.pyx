@@ -102,7 +102,7 @@ cdef class Class:
     cdef distortions sd
     cdef file_content fc
 
-    # Custom parameters (added by Magnus)
+    
     cdef double G_eff_ncdm
 
     cdef int computed # Flag to see if classy has already computed with the given pars
@@ -360,12 +360,8 @@ cdef class Class:
         # module is found in level, execute its "_init" method.
         # --------------------------------------------------------------------
         if "input" in level:
-
-            # --- Magnus debug: print parameters passed from Python ---
-            print("🧩 DEBUG: Parameters passed from Python to CLASS:")
-            for key, val in self._pars.items():
-                print(f"   → {key} = {val}")
-            # ---------------------------------------------------------
+            
+            
 
             if input_read_from_file(&self.fc, &self.pr, &self.ba, &self.th,
                                     &self.pt, &self.tr, &self.pm, &self.hr,
@@ -373,40 +369,7 @@ cdef class Class:
                 raise CosmoSevereError(errmsg)
             self.ncp.add("input")
 
-            # --- Magnus patch: allow new CLASS parameters ---
-            print("⚙️ DEBUG: Listing parameters seen by classy before marking:")
-            for i in range(self.fc.size):
-                try:
-                    name_i = self.fc.name[i].decode("utf-8", errors="ignore").strip()
-                    print(f"   → {i}: '{name_i}'  read={self.fc.read[i]}")
-                except Exception as e:
-                    print(f"   [decode error on entry {i}] {e}")
-
-            allowed_new_params = [
-                "G_eff_ncdm", "log10_G_eff_ncdm",
-                "G_eff_ur", "log10_G_eff_ur"
-            ]
-            for i in range(self.fc.size):
-                name_i = self.fc.name[i].decode("utf-8").strip()
-                if name_i in allowed_new_params:
-                    self.fc.read[i] = _TRUE_
-                    print(f"✅ Wrapper marked parameter '{name_i}' as read")
-            # -----------------------------------------------------------
-
-            # Check for unread parameters
-            problem_flag = False
-            problematic_parameters = []
-            for i in range(self.fc.size):
-                if self.fc.read[i] == _FALSE_:
-                    problem_flag = True
-                    problematic_parameters.append(self.fc.name[i].decode())
-
-            if problem_flag:
-                print("⚠️ [CLASS WARNING] Some parameters were not read by CLASS:")
-                for p in problematic_parameters:
-                    print(f"   → {p}")
-                print("⚠️ Continuing anyway (strict check disabled by Magnus)")
-                # pass  # do nothing
+            
 
 
 

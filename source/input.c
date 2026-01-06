@@ -2666,8 +2666,8 @@ int input_read_parameters_species(struct file_content *pfc,
   }
 
   /* --- Debug print to confirm reading --- */
-  printf("DEBUG: read G_eff_ncdm = %e (flag1=%d, flag2=%d)\n",
-        ppt->G_eff_ncdm, flag1, flag2);
+  //printf("DEBUG: read G_eff_ncdm = %e (flag1=%d, flag2=%d)\n",
+  //      ppt->G_eff_ncdm, flag1, flag2);
 
   /*  --------------------------------   */
 
