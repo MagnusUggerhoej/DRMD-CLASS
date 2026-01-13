@@ -22,6 +22,8 @@ matplotlib.rc('font', **font)
 matplotlib.mathtext.rcParams['legend.fontsize']='medium'
 
 
+
+
 # In[ ]:
 
 
@@ -86,4 +88,4 @@ plt.tight_layout()
 # In[ ]:
 
 
-plt.savefig('distances.pdf')
+#plt.savefig('distances.pdf')
