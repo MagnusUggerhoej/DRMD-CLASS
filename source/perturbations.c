@@ -736,6 +736,7 @@ int perturbations_init(
     struct perturbations *ppt)
 {
 
+
   /** Summary: */
 
   /** - define local variables */
@@ -1046,8 +1047,16 @@ int perturbations_free_input(struct perturbations *ppt)
   if (ppt->beta_idr != NULL)
     free(ppt->beta_idr);
 
+  /* Added by Magnus: species-resolved G_eff array */
+  if (ppt->G_eff_ncdm_species != NULL) {
+    free(ppt->G_eff_ncdm_species);
+    ppt->G_eff_ncdm_species = NULL;
+  }
+  /*------- */
+
   return _SUCCESS_;
 }
+
 
 /**
  * Free all memory space allocated by perturbations_init().
@@ -10448,207 +10457,206 @@ int perturbations_derivs(double tau,
 
 
     // TBC: curvature in all ncdm
-    if (pba->has_ncdm == _TRUE_)
-    {
+    /* ============================================================
+      ncdm perturbations: fluid approximation OR exact hierarchy
+      Includes Magnus' massive-ν self-interaction damping + debug prints
+      NOTE: Debug prints are guarded to avoid spam; remove once validated.
+      ============================================================ */
 
+    // TBC: curvature in all ncdm
+    if (pba->has_ncdm == _TRUE_) {
+
+      /* idx always points to the start of the current ncdm block in y[] */
       idx = pv->index_pt_psi0_ncdm1;
 
-      /** - ----> first case: use a fluid approximation (ncdmfa) */
-      // TBC: curvature
-      if (ppw->approx[ppw->index_ap_ncdmfa] == (int)ncdmfa_on)
-      {
+      /* ------------------------------------------------------------
+        1) Fluid approximation (ncdmfa)
+        ------------------------------------------------------------ */
+      if (ppw->approx[ppw->index_ap_ncdmfa] == (int)ncdmfa_on) {
 
-        /** - -----> loop over species */
+        /* loop over species */
+        for (n_ncdm = 0; n_ncdm < pv->N_ncdm; n_ncdm++) {
 
-        for (n_ncdm = 0; n_ncdm < pv->N_ncdm; n_ncdm++)
-        {
+          /* background quantities */
+          rho_ncdm_bg     = pvecback[pba->index_bg_rho_ncdm1 + n_ncdm];
+          p_ncdm_bg       = pvecback[pba->index_bg_p_ncdm1 + n_ncdm];
+          pseudo_p_ncdm   = pvecback[pba->index_bg_pseudo_p_ncdm1 + n_ncdm];
+          w_ncdm          = p_ncdm_bg / rho_ncdm_bg;
+          ca2_ncdm        = w_ncdm / 3.0 / (1.0 + w_ncdm) * (5.0 - pseudo_p_ncdm / p_ncdm_bg);
 
-          /** - -----> define intermediate quantitites */
-
-          rho_ncdm_bg = pvecback[pba->index_bg_rho_ncdm1 + n_ncdm];                     /* background density */
-          p_ncdm_bg = pvecback[pba->index_bg_p_ncdm1 + n_ncdm];                         /* background pressure */
-          pseudo_p_ncdm = pvecback[pba->index_bg_pseudo_p_ncdm1 + n_ncdm];              /* pseudo-pressure (see CLASS IV paper) */
-          w_ncdm = p_ncdm_bg / rho_ncdm_bg;                                             /* equation of state parameter */
-          ca2_ncdm = w_ncdm / 3.0 / (1.0 + w_ncdm) * (5.0 - pseudo_p_ncdm / p_ncdm_bg); /* adiabatic sound speed */
-
-          /* c_eff is (delta p / delta rho) in the gauge under
-             consideration (not in the gauge comoving with the
-             fluid) */
-
-          /* c_vis is introduced in order to close the system */
-
-          /* different ansatz for sound speed c_eff and viscosity speed c_vis */
-          if (ppr->ncdm_fluid_approximation == ncdmfa_mb)
-          {
+          /* closure ansatz */
+          if (ppr->ncdm_fluid_approximation == ncdmfa_mb) {
             ceff2_ncdm = ca2_ncdm;
             cvis2_ncdm = 3. * w_ncdm * ca2_ncdm;
           }
-          if (ppr->ncdm_fluid_approximation == ncdmfa_hu)
-          {
+          if (ppr->ncdm_fluid_approximation == ncdmfa_hu) {
             ceff2_ncdm = ca2_ncdm;
             cvis2_ncdm = w_ncdm;
           }
-          if (ppr->ncdm_fluid_approximation == ncdmfa_CLASS)
-          {
+          if (ppr->ncdm_fluid_approximation == ncdmfa_CLASS) {
             ceff2_ncdm = ca2_ncdm;
             cvis2_ncdm = 3. * w_ncdm * ca2_ncdm;
           }
 
-          /** - -----> exact continuity equation */
+          /* exact continuity equation */
+          dy[idx] = -(1.0 + w_ncdm) * (y[idx + 1] + metric_continuity)
+                    - 3.0 * a_prime_over_a * (ceff2_ncdm - w_ncdm) * y[idx];
 
-          dy[idx] = -(1.0 + w_ncdm) * (y[idx + 1] + metric_continuity) -
-                    3.0 * a_prime_over_a * (ceff2_ncdm - w_ncdm) * y[idx];
+          /* exact Euler equation */
+          dy[idx + 1] = -a_prime_over_a * (1.0 - 3.0 * ca2_ncdm) * y[idx + 1]
+                        + ceff2_ncdm / (1.0 + w_ncdm) * k2 * y[idx]
+                        - k2 * y[idx + 2]
+                        + metric_euler;
 
-          /** - -----> exact euler equation */
+          /* approximate shear derivative depends on closure method */
+          if (ppr->ncdm_fluid_approximation == ncdmfa_mb) {
+            dy[idx + 2] = -3.0 * (a_prime_over_a * (2. / 3. - ca2_ncdm - pseudo_p_ncdm / p_ncdm_bg / 3.)
+                                  + 1. / tau) * y[idx + 2]
+                          + 8.0 / 3.0 * cvis2_ncdm / (1.0 + w_ncdm) * s_l[2]
+                            * (y[idx + 1] + metric_shear);
+          }
 
-          dy[idx + 1] = -a_prime_over_a * (1.0 - 3.0 * ca2_ncdm) * y[idx + 1] +
-                        ceff2_ncdm / (1.0 + w_ncdm) * k2 * y[idx] - k2 * y[idx + 2] + metric_euler;
+          if (ppr->ncdm_fluid_approximation == ncdmfa_hu) {
+            dy[idx + 2] = -3.0 * a_prime_over_a * ca2_ncdm / w_ncdm * y[idx + 2]
+                          + 8.0 / 3.0 * cvis2_ncdm / (1.0 + w_ncdm) * s_l[2]
+                            * (y[idx + 1] + metric_shear);
+          }
 
-          /** - -----> different ansatz for approximate shear derivative */
+          if (ppr->ncdm_fluid_approximation == ncdmfa_CLASS) {
+            dy[idx + 2] = -3.0 * (a_prime_over_a * (2. / 3. - ca2_ncdm - pseudo_p_ncdm / p_ncdm_bg / 3.)
+                                  + 1. / tau) * y[idx + 2]
+                          + 8.0 / 3.0 * cvis2_ncdm / (1.0 + w_ncdm) * s_l[2]
+                            * (y[idx + 1] + metric_ufa_class);
+          }
 
-          if (ppr->ncdm_fluid_approximation == ncdmfa_mb)
+          /* --- Massive neutrino self-interaction damping (FLUID) --- */
           {
+            const double G_eff_here = (ppt->G_eff_ncdm_species != NULL)
+                                      ? ppt->G_eff_ncdm_species[n_ncdm]
+                                      : ppt->G_eff_ncdm;
 
-            dy[idx + 2] = -3.0 * (a_prime_over_a * (2. / 3. - ca2_ncdm - pseudo_p_ncdm / p_ncdm_bg / 3.) + 1. / tau) * y[idx + 2] + 8.0 / 3.0 * cvis2_ncdm / (1.0 + w_ncdm) * s_l[2] * (y[idx + 1] + metric_shear);
+            if (G_eff_here > 0.0) {
+
+              double taudot_Geff_ncdm =
+                  pow(a, -4)
+                  * pow(pow(4./11., 1./3.) * pba->T_cmb * _k_B_, 5)
+                  * pow(G_eff_here / (1e12 * _eV_ * _eV_), 2)
+                  * (2. * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
+
+              taudot_Geff_ncdm = MIN(taudot_Geff_ncdm, a_prime_over_a * 1e9);
+
+              /* To match Tobias: do NOT multiply by (1+w_ncdm) here.
+                (If you later want it, re-enable with a separate test.)
+              */
+              /* dy shear damping (l=2) */
+              dy[idx + 2] -= 0.40 * taudot_Geff_ncdm * y[idx + 2];
+
+              /* Debug (FLUID): no index_q exists here; guard to avoid spam */
+              if (n_ncdm == 1 && k > 1e-2 && k < 1.1e-2) {
+                printf("DEBUG FLUID: n=%d G_eff=%e taudot=%e w=%e a=%g k=%g\n",
+                      n_ncdm, G_eff_here, taudot_Geff_ncdm, w_ncdm, a, k);
+              }
+            }
           }
+          /* --------------------------------------------------------- */
 
-          if (ppr->ncdm_fluid_approximation == ncdmfa_hu)
-          {
-
-            dy[idx + 2] = -3.0 * a_prime_over_a * ca2_ncdm / w_ncdm * y[idx + 2] + 8.0 / 3.0 * cvis2_ncdm / (1.0 + w_ncdm) * s_l[2] * (y[idx + 1] + metric_shear);
-          }
-
-          if (ppr->ncdm_fluid_approximation == ncdmfa_CLASS)
-          {
-
-            dy[idx + 2] = -3.0 * (a_prime_over_a * (2. / 3. - ca2_ncdm - pseudo_p_ncdm / p_ncdm_bg / 3.) + 1. / tau) * y[idx + 2] + 8.0 / 3.0 * cvis2_ncdm / (1.0 + w_ncdm) * s_l[2] * (y[idx + 1] + metric_ufa_class);
-          }
-
-
-          /* --- Added by Magnus: Massive neutrino self-interaction damping --- */
-          if (ppt->G_eff_ncdm > 0.0) {
-
-            double taudot_Geff_ncdm = pow(a, -4)
-                                    * pow(pow(4./11., 1./3.) * pba->T_cmb * _k_B_, 5)
-                                    * pow(ppt->G_eff_ncdm / (1e12 * _eV_ * _eV_), 2)
-                                    * (2. * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
-
-            taudot_Geff_ncdm = MIN(taudot_Geff_ncdm, a_prime_over_a * 1e9);
-
-            // Damping factor decreases as neutrinos become non-relativistic
-            double relativistic_factor = (1.0 + w_ncdm);
-            taudot_Geff_ncdm *= relativistic_factor;
-
-            // Apply damping to shear term (ℓ=2)
-            dy[idx + 2] -= 0.40 * taudot_Geff_ncdm * y[idx + 2];
-
-            // Debug print for early times
-            //if (tau < 1e4 && k < 1e-3) {
-            //  printf("DEBUG[ncdmfa]: tau=%.3e, k=%.3e, taudot_Geff_ncdm=%.3e, w_ncdm=%.3f\n",
-            //        tau, k, taudot_Geff_ncdm, w_ncdm);
-            //}
-          }
-          /* --------------------------------------------------------------- */
-
-
-          /** - -----> jump to next species */
-
+          /* jump to next species block (fluid has l_max+1 variables per species) */
           idx += pv->l_max_ncdm[n_ncdm] + 1;
         }
       }
 
-      /** - ----> second case: use exact equation (Boltzmann hierarchy on momentum grid) */
+      /* ------------------------------------------------------------
+        2) Exact hierarchy (Boltzmann hierarchy on momentum grid)
+        ------------------------------------------------------------ */
+      else {
 
-      else
-      {
+        /* loop over species */
+        for (n_ncdm = 0; n_ncdm < pv->N_ncdm; n_ncdm++) {
 
-        /** - -----> loop over species */
+          /* loop over momentum */
+          for (index_q = 0; index_q < pv->q_size_ncdm[n_ncdm]; index_q++) {
 
-        for (n_ncdm = 0; n_ncdm < pv->N_ncdm; n_ncdm++)
-        {
-
-          /** - -----> loop over momentum */
-
-          for (index_q = 0; index_q < pv->q_size_ncdm[n_ncdm]; index_q++)
-          {
-
-            /* ----- begin replacement block inside exact hierarchy, inside for(index_q ...) ----- */
-
-            /** - -----> define intermediate quantities */
+            /* intermediate quantities */
             dlnf0_dlnq     = pba->dlnf0_dlnq_ncdm[n_ncdm][index_q];
             q              = pba->q_ncdm[n_ncdm][index_q];
             epsilon        = sqrt(q*q + a2 * pba->M_ncdm[n_ncdm] * pba->M_ncdm[n_ncdm]);
             qk_div_epsilon = k * q / epsilon;
 
-            /* precompute interaction rate (0 if turned off) */
+            /* per-species coupling (list preferred) */
+            const double G_eff_here = (ppt->G_eff_ncdm_species != NULL)
+                                      ? ppt->G_eff_ncdm_species[n_ncdm]
+                                      : ppt->G_eff_ncdm;
+
+            /* Interaction rate in conformal time (EXACT) */
             double taudot_Geff_ncdm = 0.0;
-            if (ppt->G_eff_ncdm > 0.0) {
-              taudot_Geff_ncdm = pow(a, -4)
-                              * pow(pow(4.0/11.0, 1.0/3.0) * pba->T_cmb * _k_B_, 5)
-                              * pow(ppt->G_eff_ncdm / (1e12 * _eV_ * _eV_), 2)
-                              * (2.0 * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
+            if (G_eff_here > 0.0) {
+
+              taudot_Geff_ncdm =
+                  pow(a, -4)
+                  * pow(pow(4./11., 1./3.) * pba->T_cmb * _k_B_, 5)
+                  * pow(G_eff_here / (1e12 * _eV_ * _eV_), 2)
+                  * (2. * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
+
               taudot_Geff_ncdm = MIN(taudot_Geff_ncdm, a_prime_over_a * 1e9);
 
-              /* relativistic suppression (→0 when non-relativistic) */
-              double q_over_eps = q / epsilon;
-              taudot_Geff_ncdm *= q_over_eps * q_over_eps;
-
-              /* --- diagnostic: check relative strength of damping --- */
-              //if (k < 1e-2 && tau < 5e3) {
-              //  printf("CHECK[ncdm]: tau=%.3e aH=%.3e taudot=%.3e ratio=%.3e\n",
-              //        tau, a_prime_over_a, taudot_Geff_ncdm, taudot_Geff_ncdm/a_prime_over_a);
-              //}
-              /*  ----------------------------------------  */
-
-
-              //if (taudot_Geff_ncdm > 0.0 && k < 5e-2 && tau < 3e3) {
-              //  printf("DEBUG[ncdm]: k=%.3e tau=%.3e q/eps=%.3f taudot=%.3e lmax=%d\n",
-              //        k, tau, q_over_eps, taudot_Geff_ncdm, pv->l_max_ncdm[n_ncdm]);
-              //}   
-            }     
-
-            /** - -----> ncdm density for given momentum bin (ℓ=0) */
-            dy[idx] = -qk_div_epsilon * y[idx + 1] + metric_continuity * dlnf0_dlnq / 3.;
-
-            /** - -----> ncdm velocity for given momentum bin (ℓ=1) */
-            dy[idx + 1] = qk_div_epsilon / 3.0 * (y[idx] - 2.0 * s_l[2] * y[idx + 2])
-                        - epsilon * metric_euler / (3.0 * q * k) * dlnf0_dlnq;
-
-            /** - -----> ncdm shear for given momentum bin (ℓ=2) */
-            dy[idx + 2] = qk_div_epsilon / 5.0 * (2.0 * s_l[2] * y[idx + 1] - 3.0 * s_l[3] * y[idx + 3])
-                        - s_l[2] * metric_shear * 2.0 / 15.0 * dlnf0_dlnq;
-
-            /* apply damping AFTER assignment so it sticks */
-            if (taudot_Geff_ncdm > 0.0) {
-              dy[idx + 2] -= 0.40 * taudot_Geff_ncdm * y[idx + 2];   
-            }
-
-            /** - -----> ncdm l>3 for given momentum bin */
-            for (l = 3; l < pv->l_max_ncdm[n_ncdm]; l++) {
-              dy[idx + l] = qk_div_epsilon / (2.0 * l + 1.0)
-                          * ( l * s_l[l]     * y[idx + (l - 1)]
-                            - (l + 1.0) * s_l[l + 1] * y[idx + (l + 1)] );
-              /* apply damping AFTER assignment */
-              if (taudot_Geff_ncdm > 0.0) {
-                dy[idx + l] -= taudot_Geff_ncdm * y[idx + l];
+              /* Debug (EXACT): safe to use index_q here; guard to avoid spam */
+              if (index_q == 0 && n_ncdm == 1 && k > 1e-2 && k < 1.1e-2) {
+                printf("DEBUG EXACT: n=%d qbin=%d G_eff=%e taudot=%e a=%g k=%g\n",
+                      n_ncdm, index_q, G_eff_here, taudot_Geff_ncdm, a, k);
               }
             }
 
-            /** - -----> ncdm lmax for given momentum bin (truncation) */
-            dy[idx + l] = qk_div_epsilon * y[idx + l - 1] - (1.0 + l) * k * cotKgen * y[idx + l];
-            /* apply damping AFTER assignment */
+            /* l=0 */
+            dy[idx] = -qk_div_epsilon * y[idx + 1]
+                      + metric_continuity * dlnf0_dlnq / 3.;
+
+            /* l=1 */
+            dy[idx + 1] = qk_div_epsilon / 3.0
+                            * (y[idx] - 2.0 * s_l[2] * y[idx + 2])
+                          - epsilon * metric_euler / (3.0 * q * k) * dlnf0_dlnq;
+
+            /* l=2 */
+            dy[idx + 2] = qk_div_epsilon / 5.0
+                            * (2.0 * s_l[2] * y[idx + 1] - 3.0 * s_l[3] * y[idx + 3])
+                          - s_l[2] * metric_shear * 2.0 / 15.0 * dlnf0_dlnq;
+
+            /* Damping for l=2 (alpha_2 = 0.40) */
             if (taudot_Geff_ncdm > 0.0) {
-              dy[idx + l] -= taudot_Geff_ncdm * y[idx + l];
+              dy[idx + 2] -= 0.40 * taudot_Geff_ncdm * y[idx + 2];
             }
 
-            /** - -----> jump to next momentum bin or species */
+            /* l>=3 */
+            for (l = 3; l < pv->l_max_ncdm[n_ncdm]; l++) {
+
+              dy[idx + l] = qk_div_epsilon / (2.0 * l + 1.0)
+                            * ( l        * s_l[l]     * y[idx + (l - 1)]
+                              - (l + 1.) * s_l[l + 1] * y[idx + (l + 1)] );
+
+              if (taudot_Geff_ncdm > 0.0) {
+                double alpha_l;
+                if      (l == 3) alpha_l = 0.43;
+                else if (l == 4) alpha_l = 0.46;
+                else if (l == 5) alpha_l = 0.47;
+                else             alpha_l = 0.48;
+
+                dy[idx + l] -= alpha_l * taudot_Geff_ncdm * y[idx + l];
+              }
+            }
+
+            /* lmax (truncation) */
+            dy[idx + l] = qk_div_epsilon * y[idx + l - 1]
+                          - (1.0 + l) * k * cotKgen * y[idx + l];
+
+            if (taudot_Geff_ncdm > 0.0) {
+              dy[idx + l] -= 0.48 * taudot_Geff_ncdm * y[idx + l];
+            }
+
+            /* jump to next momentum bin */
             idx += (pv->l_max_ncdm[n_ncdm] + 1);
-
-            /* ----- end replacement block ----- */
-
-          }
-        }
+          } /* end loop over momentum */
+        }   /* end loop over species */
       }
+      /* end of Magnus added / ncdm block */
     }
 
     /** - ---> metric */

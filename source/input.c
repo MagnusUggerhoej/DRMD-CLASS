@@ -2762,6 +2762,66 @@ int input_read_parameters_species(struct file_content *pfc,
   if (N_ncdm > 0)
   {
     pba->N_ncdm = N_ncdm;
+
+    /* ---- Species-resolved massive neutrino self-interaction coupling added by Magnus---- */
+    /* Default: use scalar ppt->G_eff_ncdm for all species (backwards compatible).
+      Optional override: read list G_eff_ncdm_species or log10_G_eff_ncdm_species (length N_ncdm). */
+
+    {
+      int flag_G_list = _FALSE_;
+      int flag_log10G_list = _FALSE_;
+      int entries_read_G = 0;
+      int entries_read_log = 0;
+      double *G_list = NULL;
+      double *log10G_list = NULL;
+
+      class_alloc(ppt->G_eff_ncdm_species, pba->N_ncdm * sizeof(double), errmsg);
+
+      /* default-fill from scalar */
+      for (int n = 0; n < pba->N_ncdm; n++) {
+        ppt->G_eff_ncdm_species[n] = ppt->G_eff_ncdm;
+      }
+
+      /* read list (linear) */
+      class_call(parser_read_list_of_doubles(pfc, "G_eff_ncdm_species",
+                                            &entries_read_G, &G_list, &flag_G_list, errmsg),
+                errmsg, errmsg);
+
+      /* read list (log10) */
+      class_call(parser_read_list_of_doubles(pfc, "log10_G_eff_ncdm_species",
+                                            &entries_read_log, &log10G_list, &flag_log10G_list, errmsg),
+                errmsg, errmsg);
+
+      class_test((flag_G_list == _TRUE_) && (flag_log10G_list == _TRUE_),
+                errmsg,
+                "You cannot enter both G_eff_ncdm_species and log10_G_eff_ncdm_species; choose one");
+
+      if (flag_G_list == _TRUE_) {
+        class_test(entries_read_G != pba->N_ncdm, errmsg,
+                  "G_eff_ncdm_species must have %d entries (one per ncdm species), but has %d",
+                  pba->N_ncdm, entries_read_G);
+
+        for (int n = 0; n < pba->N_ncdm; n++) ppt->G_eff_ncdm_species[n] = G_list[n];
+        free(G_list);
+      }
+
+      if (flag_log10G_list == _TRUE_) {
+        class_test(entries_read_log != pba->N_ncdm, errmsg,
+                  "log10_G_eff_ncdm_species must have %d entries (one per ncdm species), but has %d",
+                  pba->N_ncdm, entries_read_log);
+
+        for (int n = 0; n < pba->N_ncdm; n++) ppt->G_eff_ncdm_species[n] = pow(10.0, log10G_list[n]);
+        free(log10G_list);
+      }
+
+      /* optional debug */
+      /* printf("DEBUG: G_eff_ncdm_species[0]=%e\n", ppt->G_eff_ncdm_species[0]); */
+    }
+    /* --------------------------------------------------------------------- */
+
+
+
+
     if (ppt->gauge == synchronous)
     {
       ppr->tol_ncdm = ppr->tol_ncdm_synchronous;
