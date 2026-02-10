@@ -6982,21 +6982,26 @@ int perturbations_approximations(
       }
     }
 
-    if (pba->has_ncdm == _TRUE_)
-    {
+    if (pba->has_ncdm == _TRUE_) {
 
-      if ((tau / tau_k > ppr->ncdm_fluid_trigger_tau_over_tau_k) &&
-          (ppr->ncdm_fluid_approximation != ncdmfa_none))
-      {
-
-        ppw->approx[ppw->index_ap_ncdmfa] = (int)ncdmfa_on;
-      }
-      else
-      {
+      /* If we have an interacting sector, keep full hierarchy (disable ncdm fluid approx) Magnus 9.2 */
+      if (pba->N_ncdm_interacting > 0) {
         ppw->approx[ppw->index_ap_ncdmfa] = (int)ncdmfa_off;
+      }
+      else {
+        if ((tau / tau_k > ppr->ncdm_fluid_trigger_tau_over_tau_k) &&
+            (ppr->ncdm_fluid_approximation != ncdmfa_none)) {
+          ppw->approx[ppw->index_ap_ncdmfa] = (int)ncdmfa_on;
+        }
+        else {
+          ppw->approx[ppw->index_ap_ncdmfa] = (int)ncdmfa_off;
+        }
       }
     }
   }
+
+
+
 
   /** - for tensor modes: */
 
