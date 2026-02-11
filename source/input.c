@@ -2665,7 +2665,7 @@ int input_read_parameters_species(struct file_content *pfc,
     ppt->G_eff_ncdm = 0.0; /* default: no massive-ν self-interaction */
   }
 
-  /* --- Debug print to confirm reading --- */
+  // --- Debug print to confirm reading --- 
   //printf("DEBUG: read G_eff_ncdm = %e (flag1=%d, flag2=%d)\n",
   //      ppt->G_eff_ncdm, flag1, flag2);
 
@@ -2686,16 +2686,9 @@ int input_read_parameters_species(struct file_content *pfc,
       "You cannot enter both log10_G_eff_ur and G_eff_ur; choose one");
     ppt->G_eff_ur = pow(10.0, ppt->G_eff_ur);
   }
-  else if (flag1 == _FALSE_ && flag2 == _FALSE_) {
-    ppt->G_eff_ur = 0.0; /* default: no UR self-interaction */
+  else if (flag1 == _FALSE_ && flag2 == _FALSE_) { 
+    ppt->G_eff_ur = 0.0;  // default: no UR self-interaction above
   }
-
-  /* --- Debug print to confirm reading --- */
-  /*printf("DEBUG: read G_eff_ur = %e (flag1=%d, flag2=%d)\n",
-        ppt->G_eff_ur, flag1, flag2);
-
-  /*  --------------------------------   */
-
 
 
 
@@ -2754,256 +2747,326 @@ int input_read_parameters_species(struct file_content *pfc,
     Omega_m_remaining -= pba->Omega0_b;
   }
 
-  /** 5) Non-cold relics (ncdm) */
-  /** 5.a) Number of non-cold relics */
-  /* Read */
-  class_read_int("N_ncdm", N_ncdm);
-  /* Complete set of parameters */
-  if (N_ncdm > 0)
-  {
-    pba->N_ncdm = N_ncdm;
 
-    /* ---- Species-resolved massive neutrino self-interaction coupling added by Magnus---- */
-    /* Default: use scalar ppt->G_eff_ncdm for all species (backwards compatible).
-      Optional override: read list G_eff_ncdm_species or log10_G_eff_ncdm_species (length N_ncdm). */
+  /** 5) Non-cold relics (ncdm) 
+      Supports either legacy input: N_ncdm
+      OR sector input: N_ncdm_standard + N_ncdm_interacting
+  */
+
+  int N_ncdm_final = 0; /* <-- THIS is the final local number of ncdm species */
+
+  /* 5.a) Read legacy N_ncdm */
+  class_read_int("N_ncdm", N_ncdm);
+
+  /* --- Split ncdm into standard and interacting sectors (Magnus 05/02/2026) --- */
+  {
+    int N_ncdm_standard = 0;
+    int N_ncdm_interacting = 0;
+    int flag_std = _FALSE_, flag_int = _FALSE_;
+
+    class_call(parser_read_int(pfc, "N_ncdm_standard", &N_ncdm_standard, &flag_std, errmsg),
+              errmsg, errmsg);
+    class_call(parser_read_int(pfc, "N_ncdm_interacting", &N_ncdm_interacting, &flag_int, errmsg),
+              errmsg, errmsg);
+
+    if (flag_std == _TRUE_ || flag_int == _TRUE_) {
+
+      class_test(N_ncdm > 0, errmsg,
+                "Do not set both N_ncdm and N_ncdm_standard/interacting.");
+
+      class_test(N_ncdm_standard < 0 || N_ncdm_interacting < 0, errmsg,
+                "N_ncdm_standard and N_ncdm_interacting must be >= 0.");
+
+      class_test(N_ncdm_standard + N_ncdm_interacting == 0, errmsg,
+                "If you specify N_ncdm_standard/interacting, their sum must be > 0.");
+
+      /* store sector sizes */
+      pba->N_ncdm_standard    = N_ncdm_standard;
+      pba->N_ncdm_interacting = N_ncdm_interacting;
+
+      /* decide final local and store total */
+      N_ncdm_final = N_ncdm_standard + N_ncdm_interacting;
+      pba->N_ncdm  = N_ncdm_final;
+    }
+    else {
+      /* legacy mode */
+      pba->N_ncdm_standard    = N_ncdm;
+      pba->N_ncdm_interacting = 0;
+
+      N_ncdm_final = N_ncdm;
+      pba->N_ncdm  = N_ncdm_final;
+    }
+  }
+  /* --------------------------------------------------------------------- */
+
+
+  /* 5.b) Continue only if we actually have ncdm */
+  if (N_ncdm_final > 0) {
+
+    /*
+    * Convention:
+    *   species 0 ... N_std-1  : standard (free-streaming)
+    *   species N_std ... end  : interacting
+    */
 
     {
-      int flag_G_list = _FALSE_;
-      int flag_log10G_list = _FALSE_;
-      int entries_read_G = 0;
-      int entries_read_log = 0;
-      double *G_list = NULL;
-      double *log10G_list = NULL;
+      int Ntot = pba->N_ncdm;
+      int Nstd = pba->N_ncdm_standard;
+      int Nint = Ntot - Nstd;
 
-      class_alloc(ppt->G_eff_ncdm_species, pba->N_ncdm * sizeof(double), errmsg);
+      int flag_full = _FALSE_, flag_log_full = _FALSE_;
+      int flag_std  = _FALSE_, flag_log_std  = _FALSE_;
+      int flag_int  = _FALSE_, flag_log_int  = _FALSE_;
 
-      /* default-fill from scalar */
-      for (int n = 0; n < pba->N_ncdm; n++) {
-        ppt->G_eff_ncdm_species[n] = ppt->G_eff_ncdm;
+      int nread_full = 0, nread_std = 0, nread_int = 0;
+
+      double *G_full = NULL, *logG_full = NULL;
+      double *G_std  = NULL, *logG_std  = NULL;
+      double *G_int  = NULL, *logG_int  = NULL;
+
+      /* Allocate species array */
+      if (ppt->G_eff_ncdm_species != NULL) {
+        free(ppt->G_eff_ncdm_species);
+        ppt->G_eff_ncdm_species = NULL;
       }
+      class_alloc(ppt->G_eff_ncdm_species, Ntot * sizeof(double), errmsg);
 
-      /* read list (linear) */
+      /* -------- read full lists -------- */
       class_call(parser_read_list_of_doubles(pfc, "G_eff_ncdm_species",
-                                            &entries_read_G, &G_list, &flag_G_list, errmsg),
+                                            &nread_full, &G_full, &flag_full, errmsg),
                 errmsg, errmsg);
 
-      /* read list (log10) */
       class_call(parser_read_list_of_doubles(pfc, "log10_G_eff_ncdm_species",
-                                            &entries_read_log, &log10G_list, &flag_log10G_list, errmsg),
+                                            &nread_full, &logG_full, &flag_log_full, errmsg),
                 errmsg, errmsg);
 
-      class_test((flag_G_list == _TRUE_) && (flag_log10G_list == _TRUE_),
+      class_test(flag_full && flag_log_full, errmsg,
+                "Cannot set both G_eff_ncdm_species and log10_G_eff_ncdm_species");
+
+      /* -------- read sector lists -------- */
+      class_call(parser_read_list_of_doubles(pfc, "G_eff_ncdm_standard_species",
+                                            &nread_std, &G_std, &flag_std, errmsg),
+                errmsg, errmsg);
+
+      class_call(parser_read_list_of_doubles(pfc, "log10_G_eff_ncdm_standard_species",
+                                            &nread_std, &logG_std, &flag_log_std, errmsg),
+                errmsg, errmsg);
+
+      class_call(parser_read_list_of_doubles(pfc, "G_eff_ncdm_interacting_species",
+                                            &nread_int, &G_int, &flag_int, errmsg),
+                errmsg, errmsg);
+
+      class_call(parser_read_list_of_doubles(pfc, "log10_G_eff_ncdm_interacting_species",
+                                            &nread_int, &logG_int, &flag_log_int, errmsg),
+                errmsg, errmsg);
+
+      /* -------- exclusivity checks -------- */
+      class_test((flag_full || flag_log_full) &&
+                (flag_std || flag_log_std || flag_int || flag_log_int),
                 errmsg,
-                "You cannot enter both G_eff_ncdm_species and log10_G_eff_ncdm_species; choose one");
+                "Cannot mix full and sector-specific G_eff_ncdm inputs");
 
-      if (flag_G_list == _TRUE_) {
-        class_test(entries_read_G != pba->N_ncdm, errmsg,
-                  "G_eff_ncdm_species must have %d entries (one per ncdm species), but has %d",
-                  pba->N_ncdm, entries_read_G);
+      /* -------- CASE A: full list -------- */
+      if (flag_full || flag_log_full) {
 
-        for (int n = 0; n < pba->N_ncdm; n++) ppt->G_eff_ncdm_species[n] = G_list[n];
-        free(G_list);
+        class_test(nread_full != Ntot, errmsg,
+                  "G_eff_ncdm_species must have %d entries", Ntot);
+
+        for (n = 0; n < Ntot; n++) {
+          ppt->G_eff_ncdm_species[n] =
+            flag_full ? G_full[n] : pow(10.0, logG_full[n]);
+        }
       }
 
-      if (flag_log10G_list == _TRUE_) {
-        class_test(entries_read_log != pba->N_ncdm, errmsg,
-                  "log10_G_eff_ncdm_species must have %d entries (one per ncdm species), but has %d",
-                  pba->N_ncdm, entries_read_log);
+      /* -------- CASE B/C: sector-aware default -------- */
+      else {
 
-        for (int n = 0; n < pba->N_ncdm; n++) ppt->G_eff_ncdm_species[n] = pow(10.0, log10G_list[n]);
-        free(log10G_list);
+        /* Tobias-compatible defaults:
+        *   standard     → free-streaming → G_eff = 0
+        *   interacting  → interacting    → G_eff = scalar ppt->G_eff_ncdm
+        */
+        for (n = 0; n < Nstd; n++)
+          ppt->G_eff_ncdm_species[n] = 0.0;
+
+        for (n = Nstd; n < Ntot; n++)
+          ppt->G_eff_ncdm_species[n] = ppt->G_eff_ncdm;
+
+        /* override standard sector */
+        if (flag_std || flag_log_std) {
+          class_test(nread_std != Nstd, errmsg,
+                    "G_eff_ncdm_standard_species must have %d entries", Nstd);
+          for (n = 0; n < Nstd; n++)
+            ppt->G_eff_ncdm_species[n] =
+              flag_std ? G_std[n] : pow(10.0, logG_std[n]);
+        }
+
+        /* override interacting sector */
+        if (flag_int || flag_log_int) {
+          class_test(nread_int != Nint, errmsg,
+                    "G_eff_ncdm_interacting_species must have %d entries", Nint);
+          for (n = 0; n < Nint; n++)
+            ppt->G_eff_ncdm_species[Nstd + n] =
+              flag_int ? G_int[n] : pow(10.0, logG_int[n]);
+        }
       }
 
-      /* optional debug */
-      /* printf("DEBUG: G_eff_ncdm_species[0]=%e\n", ppt->G_eff_ncdm_species[0]); */
+      /* cleanup */
+      free(G_full);  free(logG_full);
+      free(G_std);   free(logG_std);
+      free(G_int);   free(logG_int);
     }
+  
+
     /* --------------------------------------------------------------------- */
 
+    /* tolerances depend on gauge */
+    if (ppt->gauge == synchronous) ppr->tol_ncdm = ppr->tol_ncdm_synchronous;
+    if (ppt->gauge == newtonian)   ppr->tol_ncdm = ppr->tol_ncdm_newtonian;
 
+    /** 5.c) Check if filenames for interpolation tables are given */
+    class_read_list_of_integers_or_default("use_ncdm_psd_files", pba->got_files, _FALSE_, pba->N_ncdm);
 
-
-    if (ppt->gauge == synchronous)
-    {
-      ppr->tol_ncdm = ppr->tol_ncdm_synchronous;
+    for (n = 0, fileentries = 0; n < pba->N_ncdm; n++) {
+      if (pba->got_files[n] == _TRUE_) fileentries++;
     }
-    if (ppt->gauge == newtonian)
-    {
-      ppr->tol_ncdm = ppr->tol_ncdm_newtonian;
-    }
 
-    /** 5.b) Check if filenames for interpolation tables are given */
-    /* Read */
-    class_read_list_of_integers_or_default("use_ncdm_psd_files", pba->got_files, _FALSE_, N_ncdm);
-    /* Complete set of parameters */
-    for (n = 0, fileentries = 0; n < N_ncdm; n++)
-    {
-      if (pba->got_files[n] == _TRUE_)
-      {
-        fileentries++;
-      }
-    }
-    if (fileentries > 0)
-    {
+    if (fileentries > 0) {
+      class_call(parser_read_list_of_strings(pfc, "ncdm_psd_filenames",
+                                            &entries_read, &(pba->ncdm_psd_files), &flag1, errmsg),
+                errmsg, errmsg);
 
-      /** 5.b.1) Check if filenames for interpolation tables are given */
-      /* Read */
-      class_call(parser_read_list_of_strings(pfc, "ncdm_psd_filenames", &entries_read, &(pba->ncdm_psd_files), &flag1, errmsg),
-                 errmsg,
-                 errmsg);
-      /* Test */
       class_test(flag1 == _FALSE_, errmsg,
-                 "Entry 'use_ncdm_files' is found, but no corresponding 'ncdm_psd_filenames' were found.");
+                "Entry 'use_ncdm_files' is found, but no corresponding 'ncdm_psd_filenames' were found.");
       class_test(entries_read != fileentries, errmsg,
-                 "Number of filenames found (%d) does not match number of _TRUE_ values in use_ncdm_files (%d).",
-                 entries_read, fileentries);
+                "Number of filenames found (%d) does not match number of _TRUE_ values in use_ncdm_files (%d).",
+                entries_read, fileentries);
     }
 
-    /** 5.c) (optional) p.s.d.-parameters */
-    /* Read */
-    class_call(parser_read_list_of_doubles(pfc, "ncdm_psd_parameters", &entries_read, &(pba->ncdm_psd_parameters), &flag1, errmsg),
-               errmsg,
-               errmsg);
+    /** 5.d) (optional) p.s.d.-parameters */
+    class_call(parser_read_list_of_doubles(pfc, "ncdm_psd_parameters",
+                                          &entries_read, &(pba->ncdm_psd_parameters), &flag1, errmsg),
+              errmsg, errmsg);
 
-    /** 5.d) Mass and/or Omega of each ncdm species */
-    /* Read */
-    class_read_list_of_doubles_or_default("m_ncdm", pba->m_ncdm_in_eV, 0.0, N_ncdm);
-    for (n = 0; n < N_ncdm; n++)
-    {
-      class_test(pba->m_ncdm_in_eV[n] < 0,
-                 errmsg,
-                 "You entered a negative non-CDM mass m_ncdm[%d], which makes no sense. This error was not caught in previous CLASS versions because the mass is always squared in the code, so CLASS returned the exact same results form +m_ncdm and -m_ncdm. If you want to define an 'effective negative neutrino mass' in the sense of e.g. 2405.00836 or 2407.10965, you can implement it in a python script following e.g. eq.(3) of 2407.10965", n);
+    /** 5.e) Mass and/or Omega of each ncdm species */
+    class_read_list_of_doubles_or_default("m_ncdm",     pba->m_ncdm_in_eV, 0.0, pba->N_ncdm);
+    for (n = 0; n < pba->N_ncdm; n++) {
+      class_test(pba->m_ncdm_in_eV[n] < 0, errmsg,
+                "You entered a negative non-CDM mass m_ncdm[%d], which makes no sense.", n);
     }
 
-    class_read_list_of_doubles_or_default("Omega_ncdm", pba->Omega0_ncdm, 0.0, N_ncdm);
-    // the name M_ncdm is borrowed temporarily to store omega_ncdm
-    class_read_list_of_doubles_or_default("omega_ncdm", pba->M_ncdm, 0.0, N_ncdm);
-    for (n = 0; n < N_ncdm; n++)
-    {
-      if (pba->M_ncdm[n] != 0.0)
-      {
-        /* Test */
+    class_read_list_of_doubles_or_default("Omega_ncdm",  pba->Omega0_ncdm, 0.0, pba->N_ncdm);
+    /* temporary store omega_ncdm in M_ncdm as in vanilla CLASS */
+    class_read_list_of_doubles_or_default("omega_ncdm",  pba->M_ncdm,      0.0, pba->N_ncdm);
+
+    for (n = 0; n < pba->N_ncdm; n++) {
+      if (pba->M_ncdm[n] != 0.0) {
         class_test(pba->Omega0_ncdm[n] != 0, errmsg,
-                   "You can only enter one of 'Omega_ncdm' or 'omega_ncdm' for ncdm species %d.", n);
-        /* Complete set of parameters: if the user passed either
-           Omega_ncdm or omega_ncdm, now it's stored anyway as
-           Omega_0_ncdm */
+                  "You can only enter one of 'Omega_ncdm' or 'omega_ncdm' for ncdm species %d.", n);
         pba->Omega0_ncdm[n] = pba->M_ncdm[n] / pba->h / pba->h;
-        // the name M_ncdm is now available for its real destination
       }
-      /* Set default value
-         this is the right place for passing the default value of the mass
-         (all parameters must have a default value; most of them are defined
-         in input_default_params, but the ncdm mass is a bit special and
-         there is no better place for setting its default value). We put an
-         arbitrary value m << 10^-3 eV, i.e. the ultra-relativistic limit. */
-      if ((pba->Omega0_ncdm[n] == 0.0) && (pba->m_ncdm_in_eV[n] == 0.0))
-      {
+      if ((pba->Omega0_ncdm[n] == 0.0) && (pba->m_ncdm_in_eV[n] == 0.0)) {
         pba->m_ncdm_in_eV[n] = 1.e-5;
       }
     }
 
-    /** 5.e) Temperatures */
-    /* Read */
-    class_read_list_of_doubles_or_default("T_ncdm", pba->T_ncdm, pba->T_ncdm_default, N_ncdm);
+    /** 5.f) Temperatures, chemical potentials, degeneracies */
+    class_read_list_of_doubles_or_default("T_ncdm",   pba->T_ncdm,   pba->T_ncdm_default,   pba->N_ncdm);
+    class_read_list_of_doubles_or_default("ksi_ncdm", pba->ksi_ncdm, pba->ksi_ncdm_default, pba->N_ncdm);
+    class_read_list_of_doubles_or_default("deg_ncdm", pba->deg_ncdm, pba->deg_ncdm_default, pba->N_ncdm);
 
-    /** 5.f) Chemical potentials */
-    /* Read */
-    class_read_list_of_doubles_or_default("ksi_ncdm", pba->ksi_ncdm, pba->ksi_ncdm_default, N_ncdm);
-
-    /** 5.g) Degeneracy of each ncdm species */
-    /* Read */
-    class_read_list_of_doubles_or_default("deg_ncdm", pba->deg_ncdm, pba->deg_ncdm_default, N_ncdm);
-
-    /** 5.h) Quadrature modes, 0 is qm_auto */
-    /* Read */
-    class_call(parser_read_list_of_integers(pfc, "Quadrature strategy", &entries_read, &(pba->ncdm_quadrature_strategy), &flag1, errmsg),
-               errmsg, errmsg); // Deprecated parameter, still read to keep compatibility
-    if (flag1 == _TRUE_)
-    {
-      class_test(entries_read != N_ncdm, errmsg, "Number of entries in Quadrature strategy, %d, is different from the number of N_cdm species, %d", entries_read, N_ncdm);
+    /** 5.g) Quadrature strategy, qmax, q_size */
+    class_call(parser_read_list_of_integers(pfc, "Quadrature strategy",
+                                          &entries_read, &(pba->ncdm_quadrature_strategy), &flag1, errmsg),
+              errmsg, errmsg);
+    if (flag1 == _TRUE_) {
+      class_test(entries_read != pba->N_ncdm, errmsg,
+                "Number of entries in Quadrature strategy (%d) differs from N_ncdm (%d).",
+                entries_read, pba->N_ncdm);
     }
-    else
-    {
-      class_read_list_of_integers_or_default("ncdm_quadrature_strategy", pba->ncdm_quadrature_strategy, 0, N_ncdm);
+    else {
+      class_read_list_of_integers_or_default("ncdm_quadrature_strategy",
+                                            pba->ncdm_quadrature_strategy, 0, pba->N_ncdm);
     }
 
-    /** 5.h.1) qmax, if relevant */
-    /* Read */
-    class_call(parser_read_list_of_doubles(pfc, "Maximum_q", &entries_read, &(pba->ncdm_qmax), &flag1, errmsg),
-               errmsg, errmsg); // Deprecated parameter, still read to keep compatibility
-    if (flag1 == _TRUE_)
-    {
-      class_test(entries_read != N_ncdm, errmsg, "Number of entries in Maximum_q, %d, is different from the number of N_cdm species, %d", entries_read, N_ncdm);
+    class_call(parser_read_list_of_doubles(pfc, "Maximum_q",
+                                          &entries_read, &(pba->ncdm_qmax), &flag1, errmsg),
+              errmsg, errmsg);
+    if (flag1 == _TRUE_) {
+      class_test(entries_read != pba->N_ncdm, errmsg,
+                "Number of entries in Maximum_q (%d) differs from N_ncdm (%d).",
+                entries_read, pba->N_ncdm);
     }
-    else
-    {
-      class_read_list_of_doubles_or_default("ncdm_maximum_q", pba->ncdm_qmax, 15, N_ncdm);
-    }
-
-    /** 5.h.2) Number of momentum bins */
-    class_call(parser_read_list_of_integers(pfc, "Number of momentum bins", &entries_read, &(pba->ncdm_input_q_size), &flag1, errmsg),
-               errmsg, errmsg); // Deprecated parameter, still read to keep compatibility
-    if (flag1 == _TRUE_)
-    {
-      class_test(entries_read != N_ncdm, errmsg, "Number of entries in Number of momentum bins, %d, is different from the number of N_cdm species, %d", entries_read, N_ncdm);
-    }
-    else
-    {
-      class_read_list_of_integers_or_default("ncdm_N_momentum_bins", pba->ncdm_input_q_size, 150, N_ncdm);
+    else {
+      class_read_list_of_doubles_or_default("ncdm_maximum_q", pba->ncdm_qmax, 15, pba->N_ncdm);
     }
 
-    /** Last step of 5) (i.e. NCDM) -- Calculate the masses and momenta */
+    class_call(parser_read_list_of_integers(pfc, "Number of momentum bins",
+                                          &entries_read, &(pba->ncdm_input_q_size), &flag1, errmsg),
+              errmsg, errmsg);
+    if (flag1 == _TRUE_) {
+      class_test(entries_read != pba->N_ncdm, errmsg,
+                "Number of entries in Number of momentum bins (%d) differs from N_ncdm (%d).",
+                entries_read, pba->N_ncdm);
+    }
+    else {
+      class_read_list_of_integers_or_default("ncdm_N_momentum_bins", pba->ncdm_input_q_size, 150, pba->N_ncdm);
+    }
+
+    /** Last step of 5) -- Calculate the masses and momenta */
     class_call(background_ncdm_init(ppr, pba),
-               pba->error_message,
-               errmsg);
-    /* Complete set of parameters
-       We must calculate M from omega or vice versa if one of them is missing.
-       If both are present, we must update the degeneracy parameter to
-       reflect the implicit normalization of the distribution function. */
-    for (n = 0; n < N_ncdm; n++)
-    {
-      if (pba->m_ncdm_in_eV[n] != 0.0)
-      {
-        /* Case of only mass or mass and Omega/omega: */
-        pba->M_ncdm[n] = pba->m_ncdm_in_eV[n] / _k_B_ * _eV_ / pba->T_ncdm[n] / pba->T_cmb;
+              pba->error_message,
+              errmsg);
+
+
+    /* IMPORTANT: reset total before (re)accumulating Magnus*/
+    pba->Omega0_ncdm_tot = 0.0;
+    //-----
+
+    /* Compute Omega0_ncdm_tot exactly as before, but loop over pba->N_ncdm */
+    for (n = 0; n < pba->N_ncdm; n++) {
+
+      if (pba->m_ncdm_in_eV[n] != 0.0) {
+        pba->M_ncdm[n] = pba->m_ncdm_in_eV[n] / _k_B_ * _eV_
+                        / pba->T_ncdm[n] / pba->T_cmb;
+
         class_call(background_ncdm_momenta(pba->q_ncdm_bg[n],
-                                           pba->w_ncdm_bg[n],
-                                           pba->q_size_ncdm_bg[n],
-                                           pba->M_ncdm[n],
-                                           pba->factor_ncdm[n],
-                                           0.,
-                                           NULL,
-                                           &rho_ncdm,
-                                           NULL,
-                                           NULL,
-                                           NULL),
-                   pba->error_message,
-                   errmsg);
-        if (pba->Omega0_ncdm[n] == 0.0)
-        {
+                                          pba->w_ncdm_bg[n],
+                                          pba->q_size_ncdm_bg[n],
+                                          pba->M_ncdm[n],
+                                          pba->factor_ncdm[n],
+                                          0.,
+                                          NULL,
+                                          &rho_ncdm,
+                                          NULL,
+                                          NULL,
+                                          NULL),
+                  pba->error_message,
+                  errmsg);
+
+        if (pba->Omega0_ncdm[n] == 0.0) {
           pba->Omega0_ncdm[n] = rho_ncdm / pba->H0 / pba->H0;
         }
-        else
-        {
+        else {
           fnu_factor = (pba->H0 * pba->H0 * pba->Omega0_ncdm[n] / rho_ncdm);
           pba->factor_ncdm[n] *= fnu_factor;
-          /* dlnf0dlnq is already computed, but it is independent of any
-             normalization of f0. We don't need the factor anymore, but we
-             store it nevertheless */
-          pba->deg_ncdm[n] *= fnu_factor;
+          pba->deg_ncdm[n]    *= fnu_factor;
         }
       }
-      else
-      {
-        /* Case of only Omega/omega: */
+      else {
         class_call(background_ncdm_M_from_Omega(ppr, pba, n),
-                   pba->error_message,
-                   errmsg);
+                  pba->error_message,
+                  errmsg);
+
         pba->m_ncdm_in_eV[n] = _k_B_ / _eV_ * pba->T_ncdm[n] * pba->M_ncdm[n] * pba->T_cmb;
       }
+
       pba->Omega0_ncdm_tot += pba->Omega0_ncdm[n];
     }
   }
+  /* end ncdm block */
+
+
+
   class_test(pba->Omega0_ncdm_tot < 0, errmsg, "You cannot set the NCDM density to negative values.");
   if (has_m_budget == _TRUE_)
   {
@@ -6406,11 +6469,18 @@ int input_default_params(struct background *pba,
   /** 4) CDM density */
   pba->Omega0_cdm = 0.1201075 / pow(pba->h, 2);
 
-  /** 5) ncdm sector */
-  /** 5.a) Number of distinct species */
-  pba->N_ncdm = 0;
-  /** 5.b) List of names of psd files */
-  pba->ncdm_psd_files = NULL;
+    /** 5) ncdm sector */
+    /** 5.a) Number of distinct species */
+    pba->N_ncdm = 0;
+
+    /** 5.a.1) Split into standard + interacting ncdm sectors (Magnus 05/02/2026) */
+    pba->N_ncdm_standard    = 0;
+    pba->N_ncdm_interacting = 0;
+    /*  --------------------- */
+
+    /** 5.b) List of names of psd files */
+    pba->ncdm_psd_files = NULL;
+
   /** 5.c) Analytic distribution function */
   pba->ncdm_psd_parameters = NULL;
   pba->Omega0_ncdm_tot = 0.;

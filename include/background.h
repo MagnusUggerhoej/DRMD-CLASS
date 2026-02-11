@@ -93,7 +93,14 @@ struct background
     double Gamma_dcdm;     /**< \f$ \Gamma_{dcdm} \f$: decay constant for decaying cold dark matter */
     double tau_dcdm;
 
-    int N_ncdm; /**< Number of distinguishable ncdm species */
+    //int N_ncdm; /**< Number of distinguishable ncdm species */
+    int N_ncdm; /**< Number of distinguishable ncdm species (total = standard + interacting) */
+
+    /* --- Split ncdm into standard and interacting sectors (Magnus 5/2) --- */
+    int N_ncdm_standard;    /**< Number of standard (free-streaming) ncdm species */
+    int N_ncdm_interacting; /**< Number of interacting (self-interacting) ncdm species */
+    /*  ---------------------------------------- */
+
     /* the following parameters help to define tabulated ncdm p-s-d passed in file */
     char *ncdm_psd_files; /**< list of filenames for tabulated p-s-d */
     int *got_files;       /**< list of flags for each species, set to true if p-s-d is passed through file */

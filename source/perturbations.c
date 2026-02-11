@@ -9844,7 +9844,7 @@ int perturbations_derivs(double tau,
       // total amount of hydrogen today
       n_H = Nnow / pow(a, 3);
 
-      // Helium-to-hydrogen ratio
+      // Helium-to-hxydrogen ratio
       fHe = pth->YHe / (_not4_ * (1 - pth->YHe));
 
       // The constant such that rho_gamma = a_rad * T^4
@@ -10458,36 +10458,77 @@ int perturbations_derivs(double tau,
 
     /** - ---> non-cold dark matter (ncdm): massive neutrinos, WDM, etc. */
 
-    
 
-
-    // TBC: curvature in all ncdm
     /* ============================================================
       ncdm perturbations: fluid approximation OR exact hierarchy
-      Includes Magnus' massive-ν self-interaction damping + debug prints
-      NOTE: Debug prints are guarded to avoid spam; remove once validated.
+      Tobias-matching changes:
+      (1) Use explicit index mapping (no running idx pointer)
+      (2) Apply damping ONLY to interacting species (sector split)
       ============================================================ */
 
-    // TBC: curvature in all ncdm
     if (pba->has_ncdm == _TRUE_) {
 
-      /* idx always points to the start of the current ncdm block in y[] */
-      idx = pv->index_pt_psi0_ncdm1;
+      static int printed_build_tag = 0;
+      if (!printed_build_tag) {
+        fprintf(stderr, "\n### DEBUG BUILD TAG: entered ncdm block (perturbations.c) ###\n");
+        fprintf(stderr, "### pv->N_ncdm=%d, pba->N_ncdm_standard=%d, pba->N_ncdm_interacting=%d ###\n",
+                pv->N_ncdm, pba->N_ncdm_standard, pba->N_ncdm_interacting);
+        fflush(stderr);
+        printed_build_tag = 1;
+      }
 
-      /* ------------------------------------------------------------
-        1) Fluid approximation (ncdmfa)
-        ------------------------------------------------------------ */
+
+      /* start of ncdm block in y[] */
+      const int idx_ncdm0 = pv->index_pt_psi0_ncdm1;
+
+      /* sector split (emulates Tobias NCDMType::interacting) */
+      const int Nstd = (pba->N_ncdm_standard >= 0) ? pba->N_ncdm_standard : pv->N_ncdm;
+      /* interacting: n >= Nstd */
+
+      //DEBUG: print info about split only once
+      //static int printed_split = 0;
+      //if (!printed_split) {
+      //  printed_split = 1;
+      //  fprintf(stderr,
+      //          "DEBUG NCDM SPLIT: pv->N_ncdm=%d | Nstd=%d | Nint(pba)=%d | G_eff_ncdm=%e | Geff_species_ptr=%p\n",
+      //          pv->N_ncdm, Nstd, pba->N_ncdm_interacting, ppt->G_eff_ncdm, (void*)ppt->G_eff_ncdm_species);
+      //  if (ppt->G_eff_ncdm_species != NULL) {
+      //    for (int nn=0; nn<pv->N_ncdm; nn++) {
+      //      fprintf(stderr, "  DEBUG G_eff_ncdm_species[%d]=%e\n", nn, ppt->G_eff_ncdm_species[nn]);
+      //    }
+      //  }
+      //  fflush(stderr);
+      //}
+
+
+      /* --------------------------
+        1) Fluid approximation
+        -------------------------- */
       if (ppw->approx[ppw->index_ap_ncdmfa] == (int)ncdmfa_on) {
 
-        /* loop over species */
+        static int printed_branch = 0;
+        if (!printed_branch) {
+          printed_branch = 1;
+          fprintf(stderr, "DEBUG NCDM BRANCH: using FLUID approximation (ncdmfa_on)\n");
+          fflush(stderr);
+        }
+
+
+
+        /* helper: explicit index for species n in fluid approx */
+        int idx_species = idx_ncdm0;
+
         for (n_ncdm = 0; n_ncdm < pv->N_ncdm; n_ncdm++) {
 
+          /* explicit idx for this species */
+          const int idx = idx_species;
+
           /* background quantities */
-          rho_ncdm_bg     = pvecback[pba->index_bg_rho_ncdm1 + n_ncdm];
-          p_ncdm_bg       = pvecback[pba->index_bg_p_ncdm1 + n_ncdm];
-          pseudo_p_ncdm   = pvecback[pba->index_bg_pseudo_p_ncdm1 + n_ncdm];
-          w_ncdm          = p_ncdm_bg / rho_ncdm_bg;
-          ca2_ncdm        = w_ncdm / 3.0 / (1.0 + w_ncdm) * (5.0 - pseudo_p_ncdm / p_ncdm_bg);
+          rho_ncdm_bg   = pvecback[pba->index_bg_rho_ncdm1 + n_ncdm];
+          p_ncdm_bg     = pvecback[pba->index_bg_p_ncdm1 + n_ncdm];
+          pseudo_p_ncdm = pvecback[pba->index_bg_pseudo_p_ncdm1 + n_ncdm];
+          w_ncdm        = p_ncdm_bg / rho_ncdm_bg;
+          ca2_ncdm      = w_ncdm / 3.0 / (1.0 + w_ncdm) * (5.0 - pseudo_p_ncdm / p_ncdm_bg);
 
           /* closure ansatz */
           if (ppr->ncdm_fluid_approximation == ncdmfa_mb) {
@@ -10503,17 +10544,17 @@ int perturbations_derivs(double tau,
             cvis2_ncdm = 3. * w_ncdm * ca2_ncdm;
           }
 
-          /* exact continuity equation */
+          /* continuity */
           dy[idx] = -(1.0 + w_ncdm) * (y[idx + 1] + metric_continuity)
                     - 3.0 * a_prime_over_a * (ceff2_ncdm - w_ncdm) * y[idx];
 
-          /* exact Euler equation */
+          /* Euler */
           dy[idx + 1] = -a_prime_over_a * (1.0 - 3.0 * ca2_ncdm) * y[idx + 1]
                         + ceff2_ncdm / (1.0 + w_ncdm) * k2 * y[idx]
                         - k2 * y[idx + 2]
                         + metric_euler;
 
-          /* approximate shear derivative depends on closure method */
+          /* shear closure */
           if (ppr->ncdm_fluid_approximation == ncdmfa_mb) {
             dy[idx + 2] = -3.0 * (a_prime_over_a * (2. / 3. - ca2_ncdm - pseudo_p_ncdm / p_ncdm_bg / 3.)
                                   + 1. / tau) * y[idx + 2]
@@ -10534,39 +10575,51 @@ int perturbations_derivs(double tau,
                             * (y[idx + 1] + metric_ufa_class);
           }
 
-          /* --- Massive neutrino self-interaction damping (FLUID) --- */
+          /* --- Tobias-style damping: ONLY for interacting sector --- */
           {
-            const double G_eff_here = (ppt->G_eff_ncdm_species != NULL)
-                                      ? ppt->G_eff_ncdm_species[n_ncdm]
-                                      : ppt->G_eff_ncdm;
+            const int is_interacting = (n_ncdm >= Nstd);
 
-            if (G_eff_here > 0.0) {
+            if (is_interacting) {
 
-              double taudot_Geff_ncdm =
-                  pow(a, -4)
-                  * pow(pow(4./11., 1./3.) * pba->T_cmb * _k_B_, 5)
-                  * pow(G_eff_here / (1e12 * _eV_ * _eV_), 2)
-                  * (2. * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
+              const double G_eff_here = (ppt->G_eff_ncdm_species != NULL)
+                                        ? ppt->G_eff_ncdm_species[n_ncdm]
+                                        : ppt->G_eff_ncdm;
 
-              taudot_Geff_ncdm = MIN(taudot_Geff_ncdm, a_prime_over_a * 1e9);
+              if (G_eff_here > 0.0) {
 
-              /* To match Tobias: do NOT multiply by (1+w_ncdm) here.
-                (If you later want it, re-enable with a separate test.)
-              */
-              /* dy shear damping (l=2) */
-              dy[idx + 2] -= 0.40 * taudot_Geff_ncdm * y[idx + 2];
+                double taudot_Geff_ncdm =
+                    pow(a, -4)
+                    * pow(pow(4./11., 1./3.) * pba->T_cmb * _k_B_, 5)
+                    * pow(G_eff_here / (1e12 * _eV_ * _eV_), 2)
+                    * (2. * _PI_ / _h_P_) / _c_ * _Mpc_over_m_;
 
-              /* Debug (FLUID): no index_q exists here; guard to avoid spam */
-              if (n_ncdm == 1 && k > 1e-2 && k < 1.1e-2) {
-                printf("DEBUG FLUID: n=%d G_eff=%e taudot=%e w=%e a=%g k=%g\n",
-                      n_ncdm, G_eff_here, taudot_Geff_ncdm, w_ncdm, a, k);
+                taudot_Geff_ncdm = MIN(taudot_Geff_ncdm, a_prime_over_a * 1e9);
+
+                if (k > 1e-2 && k < 1.1e-2 && n_ncdm == Nstd) {
+                  printf("DEBUG FLUID: n=%d (is_int=%d) idx=%d G_eff=%e taudot=%e w=%e a=%g aH=%g lmax=%d\n",
+                        n_ncdm, is_interacting, idx, G_eff_here, taudot_Geff_ncdm, w_ncdm,
+                        a, a_prime_over_a, pv->l_max_ncdm[n_ncdm]);
+                }
+
+
+                //debug
+                static int printed_apply_fluid = 0;
+                if (!printed_apply_fluid) {
+                  printed_apply_fluid = 1;
+                  fprintf(stderr,
+                          "DEBUG APPLY FLUID DAMP: n=%d is_int=%d idx=%d G_eff=%e taudot=%e a=%g aH=%g\n",
+                          n_ncdm, is_interacting, idx, G_eff_here, taudot_Geff_ncdm, a, a_prime_over_a);
+                  fflush(stderr);
+                }
+
+                /* alpha_2 = 0.40 */
+                dy[idx + 2] -= 0.40 * taudot_Geff_ncdm * y[idx + 2];
               }
             }
           }
-          /* --------------------------------------------------------- */
 
-          /* jump to next species block (fluid has l_max+1 variables per species) */
-          idx += pv->l_max_ncdm[n_ncdm] + 1;
+          /* advance explicit species pointer */
+          idx_species += pv->l_max_ncdm[n_ncdm] + 1;
         }
       }
 
@@ -10575,8 +10628,32 @@ int perturbations_derivs(double tau,
         ------------------------------------------------------------ */
       else {
 
+        static int printed_branch_exact = 0;
+        if (!printed_branch_exact) {
+          printed_branch_exact = 1;
+          fprintf(stderr, "DEBUG NCDM BRANCH: using EXACT hierarchy (ncdmfa_off)\n");
+          fflush(stderr);
+        }
+
+
+        /* number of standard species (free-streaming) */
+        const int Nstd = (pba->N_ncdm_standard >= 0) ? pba->N_ncdm_standard : pv->N_ncdm;
+
+        /* IMPORTANT: reset idx at start of exact hierarchy */
+        idx = idx_ncdm0;
+
+        /* DEBUG: print split info once per call (k-window limited below) */
+        static int printed = 0;
+        if (!printed) {
+          printf("DEBUG SPLIT: pv->N_ncdm=%d pba->N_ncdm_standard=%d pba->N_ncdm_interacting=%d => Nstd=%d\n",
+                pv->N_ncdm, pba->N_ncdm_standard, pba->N_ncdm_interacting, Nstd);
+          printed = 1;
+        }
+
         /* loop over species */
         for (n_ncdm = 0; n_ncdm < pv->N_ncdm; n_ncdm++) {
+
+          const int is_interacting = (n_ncdm >= Nstd);
 
           /* loop over momentum */
           for (index_q = 0; index_q < pv->q_size_ncdm[n_ncdm]; index_q++) {
@@ -10592,9 +10669,11 @@ int perturbations_derivs(double tau,
                                       ? ppt->G_eff_ncdm_species[n_ncdm]
                                       : ppt->G_eff_ncdm;
 
-            /* Interaction rate in conformal time (EXACT) */
+            /* Interaction rate in conformal time (EXACT)
+               IMPORTANT: Only for interacting sector, like Tobias' NCDMType::interacting
+            */
             double taudot_Geff_ncdm = 0.0;
-            if (G_eff_here > 0.0) {
+            if (is_interacting && (G_eff_here > 0.0)) {
 
               taudot_Geff_ncdm =
                   pow(a, -4)
@@ -10604,12 +10683,18 @@ int perturbations_derivs(double tau,
 
               taudot_Geff_ncdm = MIN(taudot_Geff_ncdm, a_prime_over_a * 1e9);
 
-              /* Debug (EXACT): safe to use index_q here; guard to avoid spam */
-              if (index_q == 0 && n_ncdm == 1 && k > 1e-2 && k < 1.1e-2) {
-                printf("DEBUG EXACT: n=%d qbin=%d G_eff=%e taudot=%e a=%g k=%g\n",
-                      n_ncdm, index_q, G_eff_here, taudot_Geff_ncdm, a, k);
+
+              static int printed = 0;
+              if (!printed) {
+                printf("DEBUG EXACT: n=%d (is_int=%d) qbin=%d idx=%d G_eff=%e taudot=%e a=%g aH=%g lmax=%d q_size=%d\n",
+                      n_ncdm, is_interacting, index_q, idx, G_eff_here, taudot_Geff_ncdm,
+                      a, a_prime_over_a, pv->l_max_ncdm[n_ncdm], pv->q_size_ncdm[n_ncdm]);
+                printed = 1;
               }
+
             }
+
+            /* ---------- free-streaming hierarchy RHS ---------- */
 
             /* l=0 */
             dy[idx] = -qk_div_epsilon * y[idx + 1]
@@ -10625,42 +10710,54 @@ int perturbations_derivs(double tau,
                             * (2.0 * s_l[2] * y[idx + 1] - 3.0 * s_l[3] * y[idx + 3])
                           - s_l[2] * metric_shear * 2.0 / 15.0 * dlnf0_dlnq;
 
-            /* Damping for l=2 (alpha_2 = 0.40) */
-            if (taudot_Geff_ncdm > 0.0) {
-              dy[idx + 2] -= 0.40 * taudot_Geff_ncdm * y[idx + 2];
-            }
-
-            /* l>=3 */
+            /* l>=3 (up to lmax-1) */
             for (l = 3; l < pv->l_max_ncdm[n_ncdm]; l++) {
-
               dy[idx + l] = qk_div_epsilon / (2.0 * l + 1.0)
                             * ( l        * s_l[l]     * y[idx + (l - 1)]
                               - (l + 1.) * s_l[l + 1] * y[idx + (l + 1)] );
-
-              if (taudot_Geff_ncdm > 0.0) {
-                double alpha_l;
-                if      (l == 3) alpha_l = 0.43;
-                else if (l == 4) alpha_l = 0.46;
-                else if (l == 5) alpha_l = 0.47;
-                else             alpha_l = 0.48;
-
-                dy[idx + l] -= alpha_l * taudot_Geff_ncdm * y[idx + l];
-              }
             }
 
             /* lmax (truncation) */
-            dy[idx + l] = qk_div_epsilon * y[idx + l - 1]
-                          - (1.0 + l) * k * cotKgen * y[idx + l];
-
-            if (taudot_Geff_ncdm > 0.0) {
-              dy[idx + l] -= 0.48 * taudot_Geff_ncdm * y[idx + l];
+            {
+              int lmax = pv->l_max_ncdm[n_ncdm];
+              dy[idx + lmax] = qk_div_epsilon * y[idx + lmax - 1]
+                              - (1.0 + lmax) * k * cotKgen * y[idx + lmax];
             }
+
+            /* ---------- Tobias-style RTA damping (apply after RHS is set) ---------- */
+            if (taudot_Geff_ncdm > 0.0) {
+
+              static int printed_apply_exact = 0;
+              if (!printed_apply_exact) {
+                printed_apply_exact = 1;
+                fprintf(stderr,
+                        "DEBUG APPLY EXACT DAMP: n=%d is_int=%d idx=%d G_eff=%e taudot=%e a=%g aH=%g q_size=%d lmax=%d\n",
+                        n_ncdm, is_interacting, idx, G_eff_here, taudot_Geff_ncdm, a, a_prime_over_a,
+                        pv->q_size_ncdm[n_ncdm], pv->l_max_ncdm[n_ncdm]);
+                fflush(stderr);
+              }
+
+
+              static const double alpha_RTA[5] = {0.40, 0.43, 0.46, 0.47, 0.48};
+              int lmax = pv->l_max_ncdm[n_ncdm];
+
+              for (int ldamp = 2; ldamp <= lmax; ldamp++) {
+                int ai = ldamp - 2;
+                if (ai > 4) ai = 4;
+                dy[idx + ldamp] -= alpha_RTA[ai] * taudot_Geff_ncdm * y[idx + ldamp];
+              }
+            }
+            /* --------------------------------------------------------------------- */
 
             /* jump to next momentum bin */
             idx += (pv->l_max_ncdm[n_ncdm] + 1);
+
           } /* end loop over momentum */
         }   /* end loop over species */
       }
+
+    
+
       /* end of Magnus added / ncdm block */
     }
 
