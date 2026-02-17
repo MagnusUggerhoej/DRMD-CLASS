@@ -1,4 +1,4 @@
-import classy_SIN as classy_pp
+import classy_NEDE as classy_pp
 
 #import classy_other as classy
 
@@ -71,7 +71,44 @@ model_reference.compute()
 
 
 
+##Matter-Power Spectrum
+
+kmax= 1
+klist = np.logspace(-4, np.log10(kmax), 1000)
+
+def mPk(perts):
+    pk = np.array([perts.pk(k*perts.h(), 0.)*perts.h()**3 for k in klist])
+    return pk
+
+pk_model_pp = mPk(model_pp)
+pk_model_reference = mPk(model_reference)
+
+
+output_data = np.column_stack([
+    klist,
+    pk_model_pp,
+    pk_model_reference
+])
+
+
+fig, ax = plt.subplots()
+
+ax.plot(klist, pk_model_pp, label = "CLASS++")
+ax.plot(klist, pk_model_reference, label = "CLASS++, No Hot NEDE nor Interacting Neutrino")
+ax.set(yscale='log', xscale='log', xlabel="k", ylabel="mP(k)")
+ax.set_title(rf"Comparison between CLASS++ and CLASS implementation of Hot NEDE and Interacting neutrino model")
+#ax.set_xscale("log")
+ax.legend()
+
+fig, ax = plt.subplots()
+
+ax.plot(klist, (pk_model_pp/pk_model_reference))
+ax.set()
+ax.set( xscale='log',xlabel="k", ylabel="mP(k)_pp / mP(k)")
+
+ax.set_title(rf"Comparison between CLASS++ and CLASS implementation of Hot NEDE and Interacting neutrino model")
 
 
 
+plt.show()
 

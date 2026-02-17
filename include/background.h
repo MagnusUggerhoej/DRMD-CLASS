@@ -94,6 +94,22 @@ struct background
     double tau_dcdm;
 
     int N_ncdm; /**< Number of distinguishable ncdm species */
+
+
+    // Magnus Edits---------------------------------------
+    
+    /* Optional split of ncdm species into:
+       - standard (free-streaming) species
+       - interacting species
+       These are convenience bookkeeping values; the actual physics should
+       be driven by per-species coupling (e.g. ppt->G_eff_ncdm_species[n]).
+    */
+    int N_ncdm_standard;     /**< Number of free-streaming ncdm species */
+    int N_ncdm_interacting;  /**< Number of interacting ncdm species */
+
+    // edits end ----------------------------------------
+
+
     /* the following parameters help to define tabulated ncdm p-s-d passed in file */
     char *ncdm_psd_files; /**< list of filenames for tabulated p-s-d */
     int *got_files;       /**< list of flags for each species, set to true if p-s-d is passed through file */
