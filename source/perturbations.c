@@ -10457,30 +10457,7 @@ int perturbations_derivs(double tau,
 
 
     // TBC: curvature in all ncdm
-    /* ============================================================
-      ncdm perturbations: fluid approximation OR exact hierarchy
-      Includes Magnus' massive-ν self-interaction damping + debug prints
-      NOTE: Debug prints are guarded to avoid spam; remove once validated.
-      ============================================================ */
-
-    // TBC: curvature in all ncdm
     
-    /* ============================================================
-      ncdm perturbations: fluid approximation OR exact hierarchy
-      Includes per-species massive-ν self-interaction damping.
-      ------------------------------------------------------------
-      WHAT CHANGES HERE (NEW IMPLEMENTATION):
-        - We compute the per-species coupling G_eff_here ONCE per species.
-        - We compute the interaction rate taudot_Geff_ncdm ONCE per species
-          (it depends on a and G_eff, not on momentum q).
-        - Inside the Boltzmann hierarchy (q-bin loop), we only APPLY damping
-          terms if taudot_Geff_ncdm > 0 (i.e. species is interacting).
-      WHY THIS IS IMPORTANT:
-        - Supports a mixed sector: some ncdm species free-streaming (G=0),
-          some interacting (G>0), within the same run.
-        - Avoids accidentally recomputing taudot each q-bin and keeps logic
-          consistent with CLASSpp-style per-species interactions.
-      ============================================================ */
 
     /** ============================================================
      *  ncdm perturbations (massive neutrinos / WDM / etc.)
@@ -10498,7 +10475,7 @@ int perturbations_derivs(double tau,
      *         standard     <=>  G_eff_here == 0
      *      where G_eff_here comes from your per-species list ppt->G_eff_ncdm_species[n].
      *
-     *  KEY CHANGES MADE HERE (compared to your earlier snippet):
+     *  Progression of logic in the code:
      *    (1) Compute per-species G_eff_here ONCE per species (not per q-bin).
      *    (2) Compute taudot_Geff_ncdm ONCE per species (depends on a and G_eff, not q).
      *    (3) In EXACT hierarchy: apply RTA damping for ALL multipoles l>=2
@@ -10595,7 +10572,7 @@ int perturbations_derivs(double tau,
           }
 
           /* ==========================================================
-          * NEW (to match colleague): interacting fluid damping
+          * interacting fluid damping
           * ----------------------------------------------------------
           * Colleague:
           *   if (type == interacting) dy[idx+2] -= 0.40*taudot*y[idx+2]
@@ -10668,16 +10645,6 @@ int perturbations_derivs(double tau,
             taudot_Geff_ncdm = MIN(taudot_Geff_ncdm, a_prime_over_a * 1e9);
           }
 
-          /* ==========================================================
-          * NEW (to match colleague): alpha_RTA table and mapping
-          * ----------------------------------------------------------
-          * Colleague uses:
-          *   alpha_RTA[5] = {0.40,0.43,0.46,0.47,0.48}
-          *   alpha_index = min(4, l-2)
-          *   dy[idx+l] -= alpha*taudot*y[idx+l] for l>=2
-          *
-          * We do EXACTLY the same.
-          * ========================================================== */
           const double alpha_RTA[5] = {0.40, 0.43, 0.46, 0.47, 0.48};
 
           /* Loop over momentum bins */
@@ -10715,7 +10682,7 @@ int perturbations_derivs(double tau,
                           - (1.0 + l) * k * cotKgen * y[idx + l];
 
             /* ==========================================================
-            * NEW (to match colleague): RTA damping for interacting species
+            * NEW: RTA damping for interacting species
             * ----------------------------------------------------------
             * Apply for ALL multipoles l = 2..l_max (inclusive).
             * If taudot==0 (free-streaming), this block does nothing.

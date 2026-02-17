@@ -1,6 +1,8 @@
 import classy_NEDE as classy_pp
 
-#import classy_other as classy
+import classy_NEDE
+print(classy_NEDE.__file__)
+
 
 
 import numpy as np

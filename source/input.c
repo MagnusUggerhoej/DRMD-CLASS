@@ -2757,252 +2757,303 @@ int input_read_parameters_species(struct file_content *pfc,
   /** 5) Non-cold relics (ncdm) */
   /** 5.a) Number of non-cold relics */
   /* Read */
-  class_read_int("N_ncdm", N_ncdm);
-  /* Complete set of parameters */
 
-
-    /* ---- Species-resolved massive neutrino self-interaction coupling added by Magnus---- */
+  /* ---- Species-resolved massive neutrino self-interaction coupling added by Magnus---- */
     /* Default: use scalar ppt->G_eff_ncdm for all species (backwards compatible).
       Optional override: read list G_eff_ncdm_species or log10_G_eff_ncdm_species (length N_ncdm). */
 
+    /* ============================================================
+    NCDM SPLIT + PER-SPECIES SELF-INTERACTIONS (logic flow) details
+    ------------------------------------------------------------
+    Goal:
+      Support a mixed ncdm sector with:
+        - Nstd free-streaming species (G_eff = 0)
+        - Nint interacting species     (G_eff > 0)
+      while keeping vanilla CLASS compatibility.
 
-  //
-  if (N_ncdm > 0)
+    (A) PRE-PASS: decide total number of ncdm species
+      1) Read legacy key "N_ncdm" with a presence flag.
+      2) Read split keys "N_ncdm_standard", "N_ncdm_interacting".
+      3) If split keys present:
+            - forbid legacy N_ncdm at the same time
+            - set:
+                pba->N_ncdm_standard    = Nstd
+                pba->N_ncdm_interacting = Nint
+                pba->N_ncdm             = Nstd + Nint
+          else (legacy mode):
+                pba->N_ncdm             = N_ncdm (or 0)
+                pba->N_ncdm_standard    = pba->N_ncdm
+                pba->N_ncdm_interacting = 0
+      4) Force local N_ncdm := pba->N_ncdm so all later list reads
+          use the correct total length (prevents parsing-length bugs).
+      5) Enter the NCDM block if (pba->N_ncdm > 0).
+
+    (B) BUILD per-species coupling array ppt->G_eff_ncdm_species[n]
+      Convention:
+          indices [0 .. Nstd-1]       are standard  (default G_eff = 0)
+          indices [Nstd .. Ntot-1]    are interacting (default G_eff = ppt->G_eff_ncdm)
+
+      1) Allocate ppt->G_eff_ncdm_species with length Ntot.
+      2) Default-fill:
+            for n < Nstd: set 0.0
+            for n >= Nstd: set ppt->G_eff_ncdm (sector default)
+
+    (C) OPTIONAL OVERRIDES (in priority order)
+      1) Full-length override (most general, length Ntot):
+            - "G_eff_ncdm_species" or "log10_G_eff_ncdm_species"
+          -> can specify different G_eff for every species, e.g. [0,0,G1,G2,...].
+
+      2) Tobias-compat interacting override (broadcast or per interacting, length 1 or Nint):
+            - "G_eff_ncdm_interacting" or "log10G_eff_ncdm_interacting"
+          -> applies only to indices [Nstd .. Ntot-1].
+
+      3) Explicit interacting-only per-species override (length Nint):
+            - "G_eff_ncdm_interacting_species" or "log10_G_eff_ncdm_interacting_species"
+          -> applies only to indices [Nstd .. Ntot-1].
+
+    (D) Downstream usage
+      In perturbations.c each species is treated as interacting iff
+          G_eff_here = ppt->G_eff_ncdm_species[n] > 0
+      otherwise it is free-streaming (no damping terms).
+    ============================================================ */
+
+    //.........................
+
+  /** 5) Non-cold relics (ncdm) */
+  /** 5.a) Number of non-cold relics */
+  /* Read legacy key (CLASS standard) */
+
+
+  /* ---------- Read legacy N_ncdm WITH a flag (robust) ---------- */
+  int flag_legacy_ncdm = _FALSE_;
+  int N_ncdm_legacy = 0;
+
+  /* DO NOT also call class_read_int("N_ncdm", N_ncdm); as done above */
+  class_call(parser_read_int(pfc, "N_ncdm", &N_ncdm_legacy, &flag_legacy_ncdm, errmsg),
+            errmsg, errmsg);
+
+  /* local variable used later in vanilla CLASS reads */
+  N_ncdm = (flag_legacy_ncdm == _TRUE_) ? N_ncdm_legacy : 0;
+
+
+  /* ------------------------------------------------------------ */
+  /* PRE-PASS: decide TOTAL N_ncdm from split keys or legacy       */
+  /* (grep-found keys: "N_ncdm_standard", "N_ncdm_interacting")    */
+  /* ------------------------------------------------------------ */  
+
+
+
   {
+    int flag_std = _FALSE_;
+    int flag_int = _FALSE_;
+    int Nstd_in  = 0;
+    int Nint_in  = 0;
+
+    /* read split keys (these set the flags if present) */
+    class_call(parser_read_int(pfc, "N_ncdm_standard",    &Nstd_in, &flag_std, errmsg), errmsg, errmsg);
+    class_call(parser_read_int(pfc, "N_ncdm_interacting", &Nint_in, &flag_int, errmsg), errmsg, errmsg);
+
+    if ((flag_std == _TRUE_) || (flag_int == _TRUE_)) {
+
+      /* split mode: legacy N_ncdm must NOT be provided */
+      class_test(flag_legacy_ncdm == _TRUE_, errmsg,
+                "Do not set both N_ncdm and N_ncdm_standard/N_ncdm_interacting.");
+
+      class_test((Nstd_in < 0) || (Nint_in < 0), errmsg,
+                "N_ncdm_standard and N_ncdm_interacting must be >= 0.");
+
+      class_test((Nstd_in + Nint_in) <= 0, errmsg,
+                "If you use N_ncdm_standard/N_ncdm_interacting, their sum must be > 0.");
+
+      pba->N_ncdm_standard    = Nstd_in;
+      pba->N_ncdm_interacting = Nint_in;
+      pba->N_ncdm             = Nstd_in + Nint_in;
+
+    } else {
+
+      /* legacy mode */
+      pba->N_ncdm             = (N_ncdm > 0) ? N_ncdm : 0;
+      pba->N_ncdm_standard    = (N_ncdm > 0) ? N_ncdm : 0;
+      pba->N_ncdm_interacting = 0;
+    }
+
+    /* CRITICAL: from here on, N_ncdm means TOTAL (for list lengths) */
+    N_ncdm = pba->N_ncdm;
+
+    printf("DEBUG split(prepass): legacy_flag=%d legacy_N=%d  flag_std=%d flag_int=%d  Nstd_in=%d Nint_in=%d  => Nstd=%d Nint=%d Ntot=%d (local N_ncdm=%d)\n",
+          flag_legacy_ncdm, N_ncdm_legacy,
+          flag_std, flag_int, Nstd_in, Nint_in,
+          pba->N_ncdm_standard, pba->N_ncdm_interacting, pba->N_ncdm, N_ncdm);
+    fflush(stdout);
+  }
+
+  /* ------------------------------------------------------------ */
+  /* NOW gate on FINAL total (works for both legacy and split)     */
+  /* ------------------------------------------------------------ */
+  if (pba->N_ncdm > 0)
+  {
+    /* keep consistent (optional but harmless) */
+    /* keep consistent (harmless) */
     pba->N_ncdm = N_ncdm;
 
-  
-    //.........................
-    /* ------------------------------------------------------------ */
-    /* Massive neutrinos / ncdm sector with optional std/int split   */
-    /* and per-species G_eff support                                */
-    /*                                                              */
-    /* Goal:                                                        */
-    /*  - Allow either the old input:                                */
-    /*        N_ncdm = Ntot                                          */
-    /*    (=> all treated as "standard"/free-streaming by default)   */
-    /*                                                              */
-    /*  - Or a new split input:                                      */
-    /*        N_ncdm_standard     = Nstd   (free-streaming)          */
-    /*        N_ncdm_interacting  = Nint   (self-interacting)        */
-    /*    with the rule: don't allow specifying both split and N_ncdm */
-    /*                                                              */
-    /*  - Build ppt->G_eff_ncdm_species[n] for each species:         */
-    /*        n < Nstd  -> 0 (free-streaming)                        */
-    /*        n >= Nstd -> ppt->G_eff_ncdm (sector default)          */
-    /*    plus optional list overrides.                              */
-    /* ------------------------------------------------------------ */
-
+    /* ============================================================ */
+    /* SNIPPET 1: per-species G_eff construction + overrides         */
+    /* IMPORTANT: DO NOT re-read N_ncdm_standard/interacting here.   */
+    /* ============================================================ */
     {
-      /* flags tell us whether a given key existed in the input file */
-      int flag_std = _FALSE_;
-      int flag_int = _FALSE_;
+      const int Ntot = pba->N_ncdm;
+      const int Nstd = pba->N_ncdm_standard;
+      const int Nint = pba->N_ncdm_interacting;
 
-      /* temporary locals for reading user values */
-      int N_ncdm_standard = 0;
-      int N_ncdm_interacting = 0;
-      int N_ncdm_final = 0;
+      class_test(Nstd < 0 || Nint < 0 || (Nstd + Nint) != Ntot, errmsg,
+                "Internal inconsistency in N_ncdm split: Ntot=%d Nstd=%d Nint=%d", Ntot, Nstd, Nint);
 
-      /* ------------------------------------------------------------ */
-      /* 1) Read optional split: N_ncdm_standard / N_ncdm_interacting  */
-      /* ------------------------------------------------------------ */
+      /* Free previous allocation (if any) */
+      if (ppt->G_eff_ncdm_species != NULL) {
+        free(ppt->G_eff_ncdm_species);
+        ppt->G_eff_ncdm_species = NULL;
+      }
 
-      /* parser_read_int:
-        - reads an integer parameter from the input parameter file (pfc)
-        - sets the destination variable
-        - sets the flag to TRUE if the key was present
-        - returns _SUCCESS_/_FAILURE_ (handled by class_call)
-      */
-      class_call(parser_read_int(pfc, "N_ncdm_standard",
-                                &N_ncdm_standard, &flag_std, errmsg),
-                errmsg, errmsg);
+      class_alloc(ppt->G_eff_ncdm_species, Ntot * sizeof(double), errmsg);
 
-      class_call(parser_read_int(pfc, "N_ncdm_interacting",
-                                &N_ncdm_interacting, &flag_int, errmsg),
-                errmsg, errmsg);
+      /* Default fill:
+        - standard species: G_eff = 0 (free-streaming)
+        - interacting species: G_eff = ppt->G_eff_ncdm (scalar default) */
+      for (int n = 0; n < Ntot; n++) {
+        ppt->G_eff_ncdm_species[n] = (n < Nstd) ? 0.0 : ppt->G_eff_ncdm;
+      }
 
       /* ------------------------------------------------------------ */
-      /* 2) Decide whether we are in "split mode" or "legacy mode"     */
+      /* 3A) FULL-LENGTH OVERRIDE (existing interface)                 */
+      /* Keys: "G_eff_ncdm_species" / "log10_G_eff_ncdm_species"       */
+      /* Length must be Ntot                                           */
       /* ------------------------------------------------------------ */
+      {
+        int flag_G_full    = _FALSE_;
+        int flag_logG_full = _FALSE_;
+        int nG = 0, nlog = 0;
+        double *Glist = NULL;
+        double *loglist = NULL;
 
-      /* class_test(condition, errmsg, "..."):
-        - if condition is true -> raise error with message and abort
-        - used to enforce consistent user input
-      */
-      if ((flag_std == _TRUE_) || (flag_int == _TRUE_)) {
+        class_call(parser_read_list_of_doubles(pfc, "G_eff_ncdm_species",
+                                              &nG, &Glist, &flag_G_full, errmsg),
+                  errmsg, errmsg);
+        class_call(parser_read_list_of_doubles(pfc, "log10_G_eff_ncdm_species",
+                                              &nlog, &loglist, &flag_logG_full, errmsg),
+                  errmsg, errmsg);
 
-        /* If user uses the split, they must NOT also set N_ncdm.
-          (N_ncdm is typically already read earlier in the file.) */
-        class_test(N_ncdm > 0, errmsg,
-                  "Do not set both N_ncdm and N_ncdm_standard/interacting.");
+        class_test(flag_G_full == _TRUE_ && flag_logG_full == _TRUE_, errmsg,
+                  "Cannot set both G_eff_ncdm_species and log10_G_eff_ncdm_species.");
 
-        class_test((N_ncdm_standard < 0) || (N_ncdm_interacting < 0), errmsg,
-                  "N_ncdm_standard and N_ncdm_interacting must be >= 0.");
+        if (flag_G_full == _TRUE_) {
+          class_test(nG != Ntot, errmsg, "G_eff_ncdm_species must have %d entries.", Ntot);
+          for (int n = 0; n < Ntot; n++) ppt->G_eff_ncdm_species[n] = Glist[n];
+          free(Glist); Glist = NULL;
+        }
 
-        class_test((N_ncdm_standard + N_ncdm_interacting) == 0, errmsg,
-                  "If you specify N_ncdm_standard/interacting, their sum must be > 0.");
-
-        /* Store into background structure (pba) so the rest of CLASS knows. */
-        pba->N_ncdm_standard    = N_ncdm_standard;
-        pba->N_ncdm_interacting = N_ncdm_interacting;
-
-        /* Total number of ncdm species in the run */
-        N_ncdm_final = N_ncdm_standard + N_ncdm_interacting;
-        pba->N_ncdm = N_ncdm_final;
-
-      } else {
-
-        /* Legacy mode: only N_ncdm is used */
-        if (N_ncdm > 0) {
-
-          pba->N_ncdm = N_ncdm;
-
-          /* default interpretation:
-            - all N_ncdm are "standard" (free-streaming)
-            - none are interacting
-          */
-          pba->N_ncdm_standard    = N_ncdm;
-          pba->N_ncdm_interacting = 0;
+        if (flag_logG_full == _TRUE_) {
+          class_test(nlog != Ntot, errmsg, "log10_G_eff_ncdm_species must have %d entries.", Ntot);
+          for (int n = 0; n < Ntot; n++) ppt->G_eff_ncdm_species[n] = pow(10.0, loglist[n]);
+          free(loglist); loglist = NULL;
         }
       }
 
       /* ------------------------------------------------------------ */
-      /* 3) Build per-species G_eff array: ppt->G_eff_ncdm_species     */
+      /* 3B) TOBIAS-COMPATIBILITY OVERRIDE (grep-found keys)           */
+      /* Keys:                                                        */
+      /*   "G_eff_ncdm_interacting"      (list length 1 or Nint)       */
+      /*   "log10G_eff_ncdm_interacting" (list length 1 or Nint)       */
+      /* Applies to indices [Nstd .. Ntot-1]                           */
       /* ------------------------------------------------------------ */
+      {
+        int flag_G    = _FALSE_;
+        int flag_logG = _FALSE_;
+        int sizeG = 0, sizeLog = 0;
+        double *Glist = NULL;
+        double *loglist = NULL;
 
-      if (pba->N_ncdm > 0) {
-
-        const int Ntot = pba->N_ncdm;             /* total species */
-        const int Nstd = pba->N_ncdm_standard;    /* free-streaming count */
-        const int Nint = pba->N_ncdm_interacting; /* interacting count */
-
-        /* Flags + buffers for optional list reads */
-        int flag_G_full_list = _FALSE_;
-        int flag_logG_full_list = _FALSE_;
-        int entries_full_G = 0;
-        int entries_full_logG = 0;
-        double *G_full_list = NULL;
-        double *logG_full_list = NULL;
-
-        int flag_G_int_list = _FALSE_;
-        int flag_logG_int_list = _FALSE_;
-        int entries_int_G = 0;
-        int entries_int_logG = 0;
-        double *G_int_list = NULL;
-        double *logG_int_list = NULL;
-
-        /* If this pointer was allocated before, free it to avoid memory leaks
-          when re-initializing (defensive programming). */
-        if (ppt->G_eff_ncdm_species != NULL) {
-          free(ppt->G_eff_ncdm_species);
-          ppt->G_eff_ncdm_species = NULL;
-        }
-
-        /* class_alloc(ptr, size, errmsg):
-          - mallocs memory, checks for failure, writes message on failure */
-        class_alloc(ppt->G_eff_ncdm_species, Ntot * sizeof(double), errmsg);
-
-        /* 3.1 Default fill rule:
-            - standard species => G_eff = 0.0 (free-streaming)
-            - interacting species => sector-wide default ppt->G_eff_ncdm
-          Convention: species indices [0..Nstd-1] are standard, [Nstd..Ntot-1] interacting.
-        */
-        for (int n = 0; n < Ntot; n++) {
-          if (n < Nstd) ppt->G_eff_ncdm_species[n] = 0.0;
-          else         ppt->G_eff_ncdm_species[n] = ppt->G_eff_ncdm;
-        }
-
-        /* ------------------------------------------------------------ */
-        /* 3.2 Optional override A: full list of length Ntot             */
-        /* ------------------------------------------------------------ */
-
-        /* parser_read_list_of_doubles:
-          - reads a comma/space separated list from input, e.g.
-            G_eff_ncdm_species = 0, 0, 1e9
-          - allocates an array (returned in *list_ptr)
-          - sets entries = number of items read
-          - sets flag to TRUE if key existed
-        */
-        class_call(parser_read_list_of_doubles(pfc, "G_eff_ncdm_species",
-                                              &entries_full_G, &G_full_list,
-                                              &flag_G_full_list, errmsg),
+        class_call(parser_read_list_of_doubles(pfc, "G_eff_ncdm_interacting",
+                                              &sizeG, &Glist, &flag_G, errmsg),
+                  errmsg, errmsg);
+        class_call(parser_read_list_of_doubles(pfc, "log10G_eff_ncdm_interacting",
+                                              &sizeLog, &loglist, &flag_logG, errmsg),
                   errmsg, errmsg);
 
-        class_call(parser_read_list_of_doubles(pfc, "log10_G_eff_ncdm_species",
-                                              &entries_full_logG, &logG_full_list,
-                                              &flag_logG_full_list, errmsg),
-                  errmsg, errmsg);
+        class_test(flag_G == _TRUE_ && flag_logG == _TRUE_, errmsg,
+                  "You cannot enter both log10G_eff_ncdm_interacting and G_eff_ncdm_interacting.");
 
-        /* Disallow setting both linear and log list at once */
-        class_test((flag_G_full_list == _TRUE_) && (flag_logG_full_list == _TRUE_),
-                  errmsg,
-                  "Cannot set both G_eff_ncdm_species and log10_G_eff_ncdm_species.");
+        if (flag_G == _TRUE_) {
+          class_test(Nint <= 0, errmsg, "You set G_eff_ncdm_interacting but N_ncdm_interacting = 0.");
+          class_test((sizeG != 1) && (sizeG != Nint), errmsg,
+                    "G_eff_ncdm_interacting must have either 1 entry (broadcast) or %d entries.", Nint);
 
-        if (flag_G_full_list == _TRUE_) {
-          class_test(entries_full_G != Ntot, errmsg,
-                    "G_eff_ncdm_species must have %d entries", Ntot);
-
-          for (int n = 0; n < Ntot; n++)
-            ppt->G_eff_ncdm_species[n] = G_full_list[n];
-
-          free(G_full_list);
-          G_full_list = NULL;
+          for (int i = 0; i < Nint; i++) {
+            ppt->G_eff_ncdm_species[Nstd + i] = (sizeG == 1) ? Glist[0] : Glist[i];
+          }
+          free(Glist); Glist = NULL;
         }
 
-        if (flag_logG_full_list == _TRUE_) {
-          class_test(entries_full_logG != Ntot, errmsg,
-                    "log10_G_eff_ncdm_species must have %d entries", Ntot);
+        if (flag_logG == _TRUE_) {
+          class_test(Nint <= 0, errmsg, "You set log10G_eff_ncdm_interacting but N_ncdm_interacting = 0.");
+          class_test((sizeLog != 1) && (sizeLog != Nint), errmsg,
+                    "log10G_eff_ncdm_interacting must have either 1 entry (broadcast) or %d entries.", Nint);
 
-          for (int n = 0; n < Ntot; n++)
-            ppt->G_eff_ncdm_species[n] = pow(10.0, logG_full_list[n]);
-
-          free(logG_full_list);
-          logG_full_list = NULL;
+          for (int i = 0; i < Nint; i++) {
+            double v = (sizeLog == 1) ? loglist[0] : loglist[i];
+            ppt->G_eff_ncdm_species[Nstd + i] = pow(10.0, v);
+          }
+          free(loglist); loglist = NULL;
         }
+      }
 
-        /* ------------------------------------------------------------ */
-        /* 3.3 Optional override B: interacting-only list (length Nint)  */
-        /*     Applies only to indices [Nstd .. Nstd+Nint-1]             */
-        /* ------------------------------------------------------------ */
+      /* ------------------------------------------------------------ */
+      /* 3C) OPTIONAL explicit per-species interacting-only lists       */
+      /* Keys:                                                        */
+      /*   "G_eff_ncdm_interacting_species"        (len Nint)          */
+      /*   "log10_G_eff_ncdm_interacting_species"  (len Nint)          */
+      /* ------------------------------------------------------------ */
+      {
+        int flag_G = _FALSE_, flag_logG = _FALSE_;
+        int sizeG = 0, sizeLog = 0;
+        double *Glist = NULL, *loglist = NULL;
 
         class_call(parser_read_list_of_doubles(pfc, "G_eff_ncdm_interacting_species",
-                                              &entries_int_G, &G_int_list,
-                                              &flag_G_int_list, errmsg),
+                                              &sizeG, &Glist, &flag_G, errmsg),
                   errmsg, errmsg);
-
         class_call(parser_read_list_of_doubles(pfc, "log10_G_eff_ncdm_interacting_species",
-                                              &entries_int_logG, &logG_int_list,
-                                              &flag_logG_int_list, errmsg),
+                                              &sizeLog, &loglist, &flag_logG, errmsg),
                   errmsg, errmsg);
 
-        class_test((flag_G_int_list == _TRUE_) && (flag_logG_int_list == _TRUE_),
-                  errmsg,
+        class_test(flag_G == _TRUE_ && flag_logG == _TRUE_, errmsg,
                   "Cannot set both G_eff_ncdm_interacting_species and log10_G_eff_ncdm_interacting_species.");
 
-        if (flag_G_int_list == _TRUE_) {
-          class_test(entries_int_G != Nint, errmsg,
-                    "G_eff_ncdm_interacting_species must have %d entries", Nint);
-
-          for (int n = 0; n < Nint; n++)
-            ppt->G_eff_ncdm_species[Nstd + n] = G_int_list[n];
-
-          free(G_int_list);
-          G_int_list = NULL;
+        if (flag_G == _TRUE_) {
+          class_test(Nint <= 0, errmsg, "You set G_eff_ncdm_interacting_species but N_ncdm_interacting = 0.");
+          class_test(sizeG != Nint, errmsg, "G_eff_ncdm_interacting_species must have %d entries.", Nint);
+          for (int i = 0; i < Nint; i++) ppt->G_eff_ncdm_species[Nstd + i] = Glist[i];
+          free(Glist); Glist = NULL;
         }
 
-        if (flag_logG_int_list == _TRUE_) {
-          class_test(entries_int_logG != Nint, errmsg,
-                    "log10_G_eff_ncdm_interacting_species must have %d entries", Nint);
-
-          for (int n = 0; n < Nint; n++)
-            ppt->G_eff_ncdm_species[Nstd + n] = pow(10.0, logG_int_list[n]);
-
-          free(logG_int_list);
-          logG_int_list = NULL;
+        if (flag_logG == _TRUE_) {
+          class_test(Nint <= 0, errmsg, "You set log10_G_eff_ncdm_interacting_species but N_ncdm_interacting = 0.");
+          class_test(sizeLog != Nint, errmsg, "log10_G_eff_ncdm_interacting_species must have %d entries.", Nint);
+          for (int i = 0; i < Nint; i++) ppt->G_eff_ncdm_species[Nstd + i] = pow(10.0, loglist[i]);
+          free(loglist); loglist = NULL;
         }
+      }
 
-      } /* end if (pba->N_ncdm > 0) */
-    }
+      /* DEBUG: print final species couplings AFTER all overrides */
+      printf("DEBUG split(Geff_final): Nstd=%d Nint=%d Ntot=%d  Geff_species=",
+            Nstd, Nint, Ntot);
+      for (int n = 0; n < Ntot; n++) {
+        printf("%s%.3e", (n==0 ? "" : ","), ppt->G_eff_ncdm_species[n]);
+      }
+      printf("\n");
+      fflush(stdout);
+
+    } /* end SNIPPET 1 block */
+
+
 
     /* --------------------------------------------------------------------- */
 
@@ -3101,6 +3152,10 @@ int input_read_parameters_species(struct file_content *pfc,
     /* Read */
     class_read_list_of_doubles_or_default("deg_ncdm", pba->deg_ncdm, pba->deg_ncdm_default, N_ncdm);
 
+
+
+    
+
     /** 5.h) Quadrature modes, 0 is qm_auto */
     /* Read */
     class_call(parser_read_list_of_integers(pfc, "Quadrature strategy", &entries_read, &(pba->ncdm_quadrature_strategy), &flag1, errmsg),
@@ -3191,6 +3246,11 @@ int input_read_parameters_species(struct file_content *pfc,
       pba->Omega0_ncdm_tot += pba->Omega0_ncdm[n];
     }
   }
+
+
+
+
+
   class_test(pba->Omega0_ncdm_tot < 0, errmsg, "You cannot set the NCDM density to negative values.");
   if (has_m_budget == _TRUE_)
   {
