@@ -2828,7 +2828,6 @@ int input_read_parameters_species(struct file_content *pfc,
   int flag_legacy_ncdm = _FALSE_;
   int N_ncdm_legacy = 0;
 
-  /* DO NOT also call class_read_int("N_ncdm", N_ncdm); as done above */
   class_call(parser_read_int(pfc, "N_ncdm", &N_ncdm_legacy, &flag_legacy_ncdm, errmsg),
             errmsg, errmsg);
 
@@ -3051,7 +3050,7 @@ int input_read_parameters_species(struct file_content *pfc,
       printf("\n");
       fflush(stdout);
 
-    } /* end SNIPPET 1 block */
+    } 
 
 
 

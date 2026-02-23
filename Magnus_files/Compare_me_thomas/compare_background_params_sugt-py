@@ -1,0 +1,261 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+from classy_NEDE import Class as ClassMine
+from classy import Class as ClassThomas
+
+
+
+LOG10_G_EFF_ZERO = -50.0  # effectively zero
+
+# -------------------------
+# common cosmology
+# -------------------------
+def common_base(lmax=2500):
+    return {
+        "h": 0.6736,
+        "omega_b": 0.02237,
+        "omega_cdm": 0.1200,
+        "A_s": 2.1e-9,
+        "n_s": 0.9649,
+        "tau_reio": 0.0543,
+
+        "output": "tCl,pCl,lCl,mPk",
+        "lensing": "yes",
+        "l_max_scalars": lmax,
+
+        # ensure pk table exists and is wide enough
+        "P_k_max_1/Mpc": 10.0,
+
+        "T_cmb": 2.7255,
+        "Omega_k": 0.0,
+
+        "N_ur": 3.046,
+        "N_ncdm": 1,
+        "m_ncdm": 0.06,
+    }
+
+def run(Cls, p, label):
+    print(f"\n=== Running {label} ===")
+    c = Cls()
+    c.set(p)
+    c.compute()
+    return c
+
+def pk_safe(cosmo, k, z):
+    if hasattr(cosmo, "pk_lin"):
+        return cosmo.pk_lin(k, z)
+    return cosmo.pk(k, z)
+
+# -------------------------
+# debug helpers
+# -------------------------
+def print_param_diff(pA, pB, nameA="A", nameB="B"):
+    keys = sorted(set(pA.keys()) | set(pB.keys()))
+    diffs = []
+    for k in keys:
+        vA = pA.get(k, "<missing>")
+        vB = pB.get(k, "<missing>")
+        if vA != vB:
+            diffs.append((k, vA, vB))
+    if diffs:
+        print(f"\n--- Input param diffs ({nameA} vs {nameB}) ---")
+        for k, vA, vB in diffs:
+            print(f"{k:28s}  {nameA}: {vA}   |   {nameB}: {vB}")
+    else:
+        print(f"\n--- Input param diffs ({nameA} vs {nameB}) --- none")
+
+def safe_get(c, fn_name, default=np.nan):
+    try:
+        fn = getattr(c, fn_name)
+        return fn()
+    except Exception:
+        return default
+
+def dump_derived(c, label):
+    # These are "derived" getters from CLASS objects
+    # (availability depends a bit on build/wrapper, so we guard each call)
+    out = {
+        "h": safe_get(c, "h"),
+        "Omega_m": safe_get(c, "Omega_m"),
+        "Omega_r": safe_get(c, "Omega_r"),
+        "Omega0_cdm": safe_get(c, "Omega0_cdm"),
+        "Omega0_b": safe_get(c, "Omega_b"),  # some wrappers use Omega_b() not Omega0_b()
+        "Omega_Lambda": safe_get(c, "Omega_Lambda"),
+        "Neff": safe_get(c, "Neff"),
+        "z_eq": safe_get(c, "z_eq"),
+        "tau0": safe_get(c, "tau0"),
+        "age": safe_get(c, "age"),
+        "rs_drag": safe_get(c, "rs_drag"),
+        "sigma8": safe_get(c, "sigma8"),
+    }
+
+    # also add Omega_ncdm if the wrapper exposes it
+    for cand in ["Omega_ncdm", "Omega0_ncdm"]:
+        val = safe_get(c, cand, None)
+        if val is not None and not (isinstance(val, float) and np.isnan(val)):
+            out[cand] = val
+
+    print(f"\n--- Derived quantities ({label}) ---")
+    for k, v in out.items():
+        print(f"{k:14s} = {v}")
+    return out
+
+def bg_at_z(c, z):
+    """
+    Use background table; keys differ slightly by build.
+    We'll print what exists among a common shortlist.
+    """
+    bg = c.get_background()
+
+    # pick representative columns if present
+    wanted = [
+        "z",
+        "H [1/Mpc]",
+        "H [km/s/Mpc]",
+        "(.)rho_tot",
+        "(.)rho_g",
+        "(.)rho_b",
+        "(.)rho_cdm",
+        "(.)rho_ur",
+        "(.)rho_ncdm",
+        "(.)Omega_m",
+        "(.)Omega_r",
+        "(.)Omega_ncdm",
+    ]
+
+    # CLASS background table is arrays; we need nearest z index
+    z_arr = np.array(bg["z"])
+    idx = int(np.argmin(np.abs(z_arr - z)))
+
+    row = {"z_req": z, "z_hit": float(z_arr[idx]), "idx": idx}
+    for k in wanted:
+        if k in bg:
+            row[k] = float(np.array(bg[k])[idx])
+
+    return row, bg
+
+def print_bg_rows(row, label):
+    print(f"\n--- Background @ z≈{row['z_req']} ({label}) ---")
+    print(f"hit z = {row['z_hit']}  (idx={row['idx']})")
+    for k, v in row.items():
+        if k in ["z_req", "z_hit", "idx"]:
+            continue
+        print(f"{k:14s} = {v}")
+
+def compare_dicts(dA, dB, labelA="A", labelB="B", rtol=1e-8, atol=0.0):
+    print(f"\n--- Compare derived ({labelA} vs {labelB}) ---")
+    keys = sorted(set(dA.keys()) & set(dB.keys()))
+    bad = 0
+    for k in keys:
+        a = dA[k]
+        b = dB[k]
+        # skip NaNs
+        if isinstance(a, float) and np.isnan(a):
+            continue
+        if isinstance(b, float) and np.isnan(b):
+            continue
+        ok = np.isclose(a, b, rtol=rtol, atol=atol)
+        if not ok:
+            bad += 1
+            print(f"DIFF {k:14s}: {labelA}={a}  {labelB}={b}   (rel={(a-b)/b if b!=0 else np.nan})")
+    if bad == 0:
+        print("All overlapping derived quantities match within tolerance.")
+
+# -------------------------
+# main
+# -------------------------
+
+
+params_thomas = common_base(lmax=2500)
+
+
+
+params_mine = common_base(lmax=2500)
+# Your new split mode: explicitly specify split (free-streaming only)
+params_mine.pop("N_ncdm", None)  # IMPORTANT: in your new parser, don't send legacy N_ncdm in split mode
+params_mine["N_ncdm_standard"] = 1
+params_mine["N_ncdm_interacting"] = 0
+
+#Match thomas parameter
+#params_mine["Omega_m"]        = 0.31519173312418747
+params_mine["Omega_r"]        = 0.00010488802859022883
+params_mine["Omega0_cdm"]     = 0.26447041034523616
+params_mine["Omega0_b"]       = 0.049301692328524445
+params_mine["Omega_Lambda"]   = 0.0
+#params_mine["Neff"]           = 5.072396442906863
+z_eq           = np.nan
+tau0           = np.nan
+params_mine["age"]            = 13.795666617704157
+params_mine["rs_drag"]        = 137.9727790072343
+#params_mine["sigma8"]         = 0.7066195038969935
+
+
+
+#params_thomas.pop("N_ncdm", None)  # IMPORTANT: in your new parser, don't send legacy N_ncdm in split mode
+params_thomas["N_ncdm_standard"] = 1
+params_thomas["N_ncdm_interacting"] = 0
+
+
+# (turn off interactions explicitly)
+params_mine["log10_G_eff_ur"] = LOG10_G_EFF_ZERO
+params_mine["log10_G_eff_ncdm"] = LOG10_G_EFF_ZERO
+
+
+
+print_param_diff(params_thomas, params_mine, "Thomas", "Mine")
+
+cosmo_T = run(ClassThomas, params_thomas, "Thomas")
+cosmo_M = run(ClassMine,   params_mine,   "Mine")
+
+der_T = dump_derived(cosmo_T, "Thomas")
+der_M = dump_derived(cosmo_M, "Mine")
+compare_dicts(der_T, der_M, "Thomas", "Mine", rtol=1e-6)
+
+# Background table comparisons at a few redshifts
+for z in [0.0, 1.0, 10.0, 1000.0]:
+    rowT, _ = bg_at_z(cosmo_T, z)
+    rowM, _ = bg_at_z(cosmo_M, z)
+    print_bg_rows(rowT, "Thomas")
+    print_bg_rows(rowM, "Mine")
+
+# -------------------------
+# P(k) check as before
+# -------------------------
+k_1Mpc = np.logspace(-4, 1.0, 250)
+Pk_T_1Mpc = np.array([pk_safe(cosmo_T, k, 0.0) for k in k_1Mpc])
+Pk_M_1Mpc = np.array([pk_safe(cosmo_M, k, 0.0) for k in k_1Mpc])
+
+h_ref = cosmo_T.h()
+k_hMpc = k_1Mpc / h_ref
+Pk_T = Pk_T_1Mpc * h_ref**3
+Pk_M = Pk_M_1Mpc * h_ref**3
+
+plt.figure(figsize=(7, 5))
+plt.loglog(k_hMpc, Pk_T, label="Thomas")
+plt.loglog(k_hMpc, Pk_M, ls="--", label="Mine")
+plt.xlabel(r"$k\,[h/\mathrm{Mpc}]$ (common $h$)")
+plt.ylabel(r"$P(k)\,[(\mathrm{Mpc}/h)^3]$")
+plt.title("P(k) – LCDM + 1 massive ncdm (linear)")
+plt.legend()
+plt.grid(True, which="both", ls=":")
+plt.tight_layout()
+plt.show()
+
+ratio = Pk_M / Pk_T
+plt.figure(figsize=(7, 3.8))
+plt.semilogx(k_hMpc, ratio)
+plt.axhline(1.0, ls=":")
+plt.xlabel(r"$k\,[h/\mathrm{Mpc}]$ (common $h$)")
+plt.ylabel("Mine / Thomas")
+plt.title("P(k) ratio")
+plt.grid(True, which="both", ls=":")
+plt.tight_layout()
+plt.show()
+
+print("\n=== Summary ===")
+print("h(Thomas) =", cosmo_T.h(), " h(Mine) =", cosmo_M.h())
+print("max |ratio-1| =", np.max(np.abs(ratio - 1)))
+
+cosmo_T.struct_cleanup(); cosmo_T.empty()
+cosmo_M.struct_cleanup(); cosmo_M.empty()
