@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 from classy_NEDE import Class as ClassMine
 from classy import Class as ClassThomas
 
+import classy, classy_NEDE
+print("classy      :", classy.__file__)
+print("classy_NEDE :", classy_NEDE.__file__)
 
 
 LOG10_G_EFF_ZERO = -50.0  # effectively zero
@@ -178,7 +181,7 @@ params_mine["N_ncdm_standard"] = 1
 params_mine["N_ncdm_interacting"] = 0
 
 #Match thomas parameter
-#params_mine["Omega_m"]        = 0.31519173312418747
+params_mine["Omega_m"]        = 0.31519173312418747
 params_mine["Omega_r"]        = 0.00010488802859022883
 params_mine["Omega0_cdm"]     = 0.26447041034523616
 params_mine["Omega0_b"]       = 0.049301692328524445

@@ -1,4 +1,4 @@
-from classy_NEDE_jan import Class as ClassMine
+from classy_NEDE import Class as ClassMine
 from classy import Class as ClassThomas
 
 import matplotlib.pyplot as plt
