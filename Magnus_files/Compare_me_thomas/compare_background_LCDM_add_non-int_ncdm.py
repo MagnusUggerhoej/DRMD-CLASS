@@ -21,7 +21,7 @@ non-interacting limit and preserves baseline cosmological behavior.
 
 
 from classy_NEDE_jan import Class as ClassMine #if swithcing to feb version (CLASS_NEDE), remember changes in input so that you need to explicitly give the splitting. =>input_read_parameters_species(L:2860) :condition (flag_legacy_ncdm == _TRUE_) is true; Do not set both N_ncdm and N_ncdm_standard/N_ncdm_interacting. 
-from classy import Class as ClassThomas
+from classy_tobias import Class as ClassThomas
 
 import numpy as np
 import matplotlib.pyplot as plt

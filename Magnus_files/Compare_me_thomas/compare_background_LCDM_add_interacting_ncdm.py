@@ -9,7 +9,7 @@ We compare linear matter power spectrum P(k) at z=0 on the same physical k [1/Mp
 """
 
 from classy_NEDE import Class as ClassMine
-from classy import Class as ClassThomas
+from classy_tobias import Class as ClassThomas
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 # ------------------------------------------------------------
 LOG10_G_EFF_UR_ON   = 6.0
 LOG10_G_EFF_NCDM_ON = 6.0
-
+DEG_NCDM            = 1.0
 
 def common_base(lmax=2500):
     return {
@@ -41,6 +41,8 @@ def common_base(lmax=2500):
 
         "T_cmb": 2.7255,
         "Omega_k": 0.0,
+
+        "ncdm_fluid_approximation": 3,  # no fluid approx for ncdm (interactions can make this inaccurate) - test with tobias
 
         # IMPORTANT: keep the same radiation budget in both
         # (CLASS uses N_ur for massless relics; your build likely does too)
@@ -74,7 +76,7 @@ params_thomas["log10_G_eff_ur"] = LOG10_G_EFF_UR_ON
 params_thomas.update({
     "N_ncdm_interacting": 1,
     "m_ncdm_interacting": 0.06,
-    "deg_ncdm_interacting": 4.0,   # If you want total = 3.046, set 3.046; see note below
+    "deg_ncdm_interacting": DEG_NCDM,   # If you want total = 3.046, set 3.046; see note below. This must match Mine's deg_ncdm_interacting below.
     "log10G_eff_ncdm_interacting": LOG10_G_EFF_NCDM_ON,
 })
 
@@ -102,7 +104,7 @@ params_mine.update({
 
     # your split-sector mass/deg keys
     "m_ncdm_interacting": 0.06,
-    "deg_ncdm_interacting": 4.0,  # MUST match Thomas choice above
+    "deg_ncdm_interacting": DEG_NCDM,  # MUST match Thomas choice above
 
     # your split-sector coupling key (list or scalar)
     # you already verified this works:

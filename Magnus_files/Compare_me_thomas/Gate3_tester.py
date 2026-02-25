@@ -25,7 +25,7 @@ Key design
 import numpy as np
 import matplotlib.pyplot as plt
 
-from classy import Class as ClassThomas
+from classy_tobias import Class as ClassThomas
 from classy_NEDE import Class as ClassMine
 
 
