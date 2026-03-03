@@ -3151,7 +3151,173 @@ int input_read_parameters_species(struct file_content *pfc,
     /* Read */
     class_read_list_of_doubles_or_default("deg_ncdm", pba->deg_ncdm, pba->deg_ncdm_default, N_ncdm);
 
+    /* ============================================================
+      Split-key overrides for ncdm properties (m, deg, T) Magnus edit
+      ------------------------------------------------------------
+      Purpose:
+        In split mode (N_ncdm_standard / N_ncdm_interacting), we want the
+        interacting species’ *properties* to be set via Thomas-style keys:
+          m_ncdm_interacting, deg_ncdm_interacting, T_ncdm_interacting
+        (plus optional per-species list forms).
+        Without this, the interacting degeneracy/mass/temperature can
+        silently stay at vanilla defaults (e.g. deg=1.0), breaking
+        apples-to-apples comparisons.
 
+      Convention (your split indexing):
+        indices [0 .. Nstd-1]    = standard species
+        indices [Nstd .. Ntot-1] = interacting species
+
+      Priority:
+        interacting_species list  >  interacting scalar  >  legacy lists/defaults
+
+      IMPORTANT PLACEMENT RULE:
+        This must run AFTER the standard CLASS reads:
+          m_ncdm  -> pba->m_ncdm_in_eV
+          T_ncdm  -> pba->T_ncdm
+          deg_ncdm-> pba->deg_ncdm
+        Otherwise those later reads overwrite your overrides.
+      ============================================================ */
+    {
+      const int Ntot = pba->N_ncdm;
+      const int Nstd = pba->N_ncdm_standard;
+      const int Nint = pba->N_ncdm_interacting;
+
+      /* Only relevant if split mode includes interacting species */
+      if (Nint > 0) {
+
+        /* -----------------------------
+          (1) m_ncdm_interacting override
+          -----------------------------
+          What it does:
+            Overwrites the masses (in eV) of the interacting species slots.
+          Keys supported:
+            - m_ncdm_interacting (scalar): broadcast to all interacting species
+            - m_ncdm_interacting_species (list): length 1 (broadcast) or Nint
+          ----------------------------- */
+        {
+          int flag_m_scalar = _FALSE_;
+          double m_scalar = 0.0;
+
+          int flag_m_list = _FALSE_;
+          int m_list_size = 0;
+          double *m_list = NULL;
+
+          class_call(parser_read_double(pfc, "m_ncdm_interacting",
+                                        &m_scalar, &flag_m_scalar, errmsg),
+                    errmsg, errmsg);
+
+          class_call(parser_read_list_of_doubles(pfc, "m_ncdm_interacting_species",
+                                                &m_list_size, &m_list, &flag_m_list, errmsg),
+                    errmsg, errmsg);
+
+          if (flag_m_list == _TRUE_) {
+            class_test((m_list_size != 1) && (m_list_size != Nint), errmsg,
+                      "m_ncdm_interacting_species must have either 1 entry (broadcast) or %d entries.", Nint);
+            for (int i = 0; i < Nint; i++) {
+              pba->m_ncdm_in_eV[Nstd + i] = (m_list_size == 1) ? m_list[0] : m_list[i];
+            }
+            free(m_list); m_list = NULL;
+          }
+          else if (flag_m_scalar == _TRUE_) {
+            for (int i = 0; i < Nint; i++) {
+              pba->m_ncdm_in_eV[Nstd + i] = m_scalar;
+            }
+          }
+        }
+
+        /* -----------------------------
+          (2) deg_ncdm_interacting override
+          -----------------------------
+          What it does:
+            Overwrites the degeneracy factors of interacting species slots.
+            This directly controls the ncdm energy density budget (rho_ncdm).
+          Keys supported:
+            - deg_ncdm_interacting (scalar): broadcast
+            - deg_ncdm_interacting_species (list): length 1 (broadcast) or Nint
+          ----------------------------- */
+        {
+          int flag_deg_scalar = _FALSE_;
+          double deg_scalar = 1.0;
+
+          int flag_deg_list = _FALSE_;
+          int deg_list_size = 0;
+          double *deg_list = NULL;
+
+          class_call(parser_read_double(pfc, "deg_ncdm_interacting",
+                                        &deg_scalar, &flag_deg_scalar, errmsg),
+                    errmsg, errmsg);
+
+          class_call(parser_read_list_of_doubles(pfc, "deg_ncdm_interacting_species",
+                                                &deg_list_size, &deg_list, &flag_deg_list, errmsg),
+                    errmsg, errmsg);
+
+          if (flag_deg_list == _TRUE_) {
+            class_test((deg_list_size != 1) && (deg_list_size != Nint), errmsg,
+                      "deg_ncdm_interacting_species must have either 1 entry (broadcast) or %d entries.", Nint);
+            for (int i = 0; i < Nint; i++) {
+              pba->deg_ncdm[Nstd + i] = (deg_list_size == 1) ? deg_list[0] : deg_list[i];
+            }
+            free(deg_list); deg_list = NULL;
+          }
+          else if (flag_deg_scalar == _TRUE_) {
+            for (int i = 0; i < Nint; i++) {
+              pba->deg_ncdm[Nstd + i] = deg_scalar;
+            }
+          }
+        }
+
+        /* -----------------------------
+          (3) T_ncdm_interacting override
+          -----------------------------
+          What it does:
+            Overwrites the temperature ratio T_ncdm (relative to T_cmb)
+            for interacting species slots.
+          Keys supported:
+            - T_ncdm_interacting (scalar): broadcast
+            - T_ncdm_interacting_species (list): length 1 (broadcast) or Nint
+          ----------------------------- */
+        {
+          int flag_T_scalar = _FALSE_;
+          double T_scalar = pba->T_ncdm_default;
+
+          int flag_T_list = _FALSE_;
+          int T_list_size = 0;
+          double *T_list = NULL;
+
+          class_call(parser_read_double(pfc, "T_ncdm_interacting",
+                                        &T_scalar, &flag_T_scalar, errmsg),
+                    errmsg, errmsg);
+
+          class_call(parser_read_list_of_doubles(pfc, "T_ncdm_interacting_species",
+                                                &T_list_size, &T_list, &flag_T_list, errmsg),
+                    errmsg, errmsg);
+
+          if (flag_T_list == _TRUE_) {
+            class_test((T_list_size != 1) && (T_list_size != Nint), errmsg,
+                      "T_ncdm_interacting_species must have either 1 entry (broadcast) or %d entries.", Nint);
+            for (int i = 0; i < Nint; i++) {
+              pba->T_ncdm[Nstd + i] = (T_list_size == 1) ? T_list[0] : T_list[i];
+            }
+            free(T_list); T_list = NULL;
+          }
+          else if (flag_T_scalar == _TRUE_) {
+            for (int i = 0; i < Nint; i++) {
+              pba->T_ncdm[Nstd + i] = T_scalar;
+            }
+          }
+        }
+
+        /* Debug: confirm the interacting slots after overrides */
+        printf("DEBUG split(ncdm_props): Nstd=%d Nint=%d Ntot=%d | interacting slots:\n", Nstd, Nint, Ntot);
+        for (int i = 0; i < Nint; i++) {
+          int idx = Nstd + i;
+          printf("  idx=%d: m=%.6g eV  deg=%.6g  T=%.6g\n",
+                idx, pba->m_ncdm_in_eV[idx], pba->deg_ncdm[idx], pba->T_ncdm[idx]);
+        }
+        fflush(stdout);
+      }
+    }
+    // -------------------------------------------------- end Magnus edit --------------------------------------------------
 
     
 
