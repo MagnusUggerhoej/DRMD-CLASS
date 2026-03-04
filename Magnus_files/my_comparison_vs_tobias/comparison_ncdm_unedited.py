@@ -6,13 +6,13 @@ from matplotlib.gridspec import GridSpec
 from comparison_functions import *
 
 #import classy as classy_pp
-import classy_NEDE_Magnus as classy_Magnus
-import classy_NEDE_Tobias as classy_Tobias
-import classy_SI as classy_reference
+import classy_NEDE as classy_Magnus
+import classy_tobias as classy_Tobias
+import classy as classy_reference
 
-from classy import Class as classy_reference
-from classy_NEDE import Class as classy_Magnus
-from classy_tobias import Class as classy_Tobias
+#from classy import Class as classy_reference
+#from classy_NEDE import Class as classy_Magnus
+#from classy_tobias import Class as classy_Tobias
 
 
 model_Magnus_ncdm = run_cosmo(classy_Magnus, get_dict_ncdm())
@@ -63,3 +63,9 @@ for key in background_Magnus_ncdm.keys():
     axs[1].set(xlabel='z', ylabel=f'Relative difference for {key}', xscale='log')
     axs[1].invert_xaxis()  # Invert x-axis to have z decreasing from left to right
     axs[1].legend()
+
+
+
+
+
+

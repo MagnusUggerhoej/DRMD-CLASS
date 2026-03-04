@@ -177,7 +177,7 @@ struct perturbations
   /** --- Massive neutrino self-interaction parameters (added by Magnus) --- */
   double G_eff_ncdm;  /* Effective self-interaction strength for massive neutrinos (GeV^-2) */
   double * G_eff_ncdm_species; /* length N_ncdm. 0 => standard (free-streaming); >0 => interacting */
-  double *G_eff_ncdm_species;
+  //double *G_eff_ncdm_species;
   /** ---------------------------------------------------------------------- */
 
 
