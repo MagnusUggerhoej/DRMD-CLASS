@@ -2878,12 +2878,20 @@ int input_read_parameters_species(struct file_content *pfc,
 
     /* CRITICAL: from here on, N_ncdm means TOTAL (for list lengths) */
     N_ncdm = pba->N_ncdm;
-
-    printf("DEBUG split(prepass): legacy_flag=%d legacy_N=%d  flag_std=%d flag_int=%d  Nstd_in=%d Nint_in=%d  => Nstd=%d Nint=%d Ntot=%d (local N_ncdm=%d)\n",
-          flag_legacy_ncdm, N_ncdm_legacy,
-          flag_std, flag_int, Nstd_in, Nint_in,
-          pba->N_ncdm_standard, pba->N_ncdm_interacting, pba->N_ncdm, N_ncdm);
-    fflush(stdout);
+    if (input_verbose > 0) {
+      printf("DEBUG split(prepass): legacy_flag=%d legacy_N=%d  "
+            "flag_std=%d flag_int=%d  "
+            "Nstd_in=%d Nint_in=%d  "
+            "=> Nstd=%d Nint=%d Ntot=%d (local N_ncdm=%d)\n",
+            flag_legacy_ncdm, N_ncdm_legacy,
+            flag_std, flag_int,
+            Nstd_in, Nint_in,
+            pba->N_ncdm_standard,
+            pba->N_ncdm_interacting,
+            pba->N_ncdm,
+            N_ncdm);
+      fflush(stdout);
+    }
   }
 
   /* ------------------------------------------------------------ */
