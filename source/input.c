@@ -3190,8 +3190,21 @@ int input_read_parameters_species(struct file_content *pfc,
       const int Nstd = pba->N_ncdm_standard;
       const int Nint = pba->N_ncdm_interacting;
 
-      /* Only relevant if split mode includes interacting species */
+      /* Only relevant if split mode includes interacting species*/
       if (Nint > 0) {
+
+
+        //Debug  10/3
+        if (input_verbose > 0) {
+          printf("DEBUG before split(ncdm_props): Nstd=%d Nint=%d Ntot=%d | all slots:\n",
+                Nstd, Nint, Ntot);
+          for (int n = 0; n < Ntot; n++) {
+            printf("  idx=%d: m=%.6g eV  deg=%.6g  T=%.6g\n",
+                  n, pba->m_ncdm_in_eV[n], pba->deg_ncdm[n], pba->T_ncdm[n]);
+          }
+          fflush(stdout);
+        }
+        // end debug
 
         /* -----------------------------
           (1) m_ncdm_interacting override
@@ -3217,6 +3230,14 @@ int input_read_parameters_species(struct file_content *pfc,
           class_call(parser_read_list_of_doubles(pfc, "m_ncdm_interacting_species",
                                                 &m_list_size, &m_list, &flag_m_list, errmsg),
                     errmsg, errmsg);
+
+          //Debug 10/3
+          if (input_verbose > 0) {
+            printf("DEBUG m override flags: flag_m_scalar=%d  m_scalar=%.6g  flag_m_list=%d  m_list_size=%d\n",
+                  flag_m_scalar, m_scalar, flag_m_list, m_list_size);
+            fflush(stdout);
+          }
+          // end debug
 
           if (flag_m_list == _TRUE_) {
             class_test((m_list_size != 1) && (m_list_size != Nint), errmsg,
@@ -3315,14 +3336,17 @@ int input_read_parameters_species(struct file_content *pfc,
           }
         }
 
-        /* Debug: confirm the interacting slots after overrides */
-        printf("DEBUG split(ncdm_props): Nstd=%d Nint=%d Ntot=%d | interacting slots:\n", Nstd, Nint, Ntot);
-        for (int i = 0; i < Nint; i++) {
-          int idx = Nstd + i;
-          printf("  idx=%d: m=%.6g eV  deg=%.6g  T=%.6g\n",
-                idx, pba->m_ncdm_in_eV[idx], pba->deg_ncdm[idx], pba->T_ncdm[idx]);
+        /* Debug: confirm the interacting slots after overrides 10/3*/
+        if (input_verbose > 0) {
+          printf("DEBUG after split(ncdm_props): Nstd=%d Nint=%d Ntot=%d | interacting slots:\n",
+                Nstd, Nint, Ntot);
+          for (int i = 0; i < Nint; i++) {
+            int idx = Nstd + i;
+            printf("  idx=%d: m=%.6g eV  deg=%.6g  T=%.6g\n",
+                  idx, pba->m_ncdm_in_eV[idx], pba->deg_ncdm[idx], pba->T_ncdm[idx]);
+          }
+          fflush(stdout); //tells the system: "Take everything currently waiting in the stdout buffer and write it to the terminal right now."
         }
-        fflush(stdout);
       }
     }
     // -------------------------------------------------- end Magnus edit --------------------------------------------------

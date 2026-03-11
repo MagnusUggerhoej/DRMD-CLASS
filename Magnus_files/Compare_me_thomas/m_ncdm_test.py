@@ -54,12 +54,9 @@ K_1MPC = np.logspace(-4, 1.0, 250)
 Z_PK   = 0.0
 L_MAX  = 2500
 
-# keep same radiation budget convention as before
-DEG = 1.0
+DEG      = 1.0
 N_ur_run = max(0.0, 3.046 - DEG)
-
-# use a nonzero coupling so the interacting slot is really used
-G_EFF = 1e-3
+G_EFF    = 1e-3
 
 def base_params():
     return {
@@ -80,7 +77,13 @@ def base_params():
 
         "recombination": "recfast",
         "reio_parametrization": "reio_camb",
+
+        # turn on your new debug prints in input.c
+        "input_verbose": 1,
     }
+
+
+# 
 
 
 # =============================================================================
@@ -95,7 +98,8 @@ p_legacy.update({
     "T_ncdm": 0.71611,
 })
 
-# =============================================================================
+
+# ============================================================================= 
 # Case B: split interacting, target mass = 1e-2
 # =============================================================================
 p_split_hi = base_params()
@@ -121,6 +125,7 @@ p_split_hi.update({
     "G_over_aH_drmd_ini": 0.0,
 })
 p_split_hi.pop("N_ncdm", None)
+
 
 # =============================================================================
 # Case C: split interacting, control mass = 1e-5
@@ -157,6 +162,18 @@ print("\n==============================")
 print("Mine-only mass diagnostic")
 print("==============================")
 
+print("\n--- Parameters: legacy ---")
+for k, v in p_legacy.items():
+    print(f"{k}: {v}")
+
+print("\n--- Parameters: split_hi ---")
+for k, v in p_split_hi.items():
+    print(f"{k}: {v}")
+
+print("\n--- Parameters: split_lo ---")
+for k, v in p_split_lo.items():
+    print(f"{k}: {v}")
+
 c_legacy   = run_mine(p_legacy,   "Legacy m_ncdm = 1e-2")
 c_split_hi = run_mine(p_split_hi, "Split m_ncdm_interacting = 1e-2")
 c_split_lo = run_mine(p_split_lo, "Split m_ncdm_interacting = 1e-5")
@@ -180,7 +197,7 @@ fig, (ax1, ax2) = plt.subplots(
     sharex=True,
     gridspec_kw={"height_ratios": [3, 1]}
 )
-
+ 
 ax1.loglog(k_hMpc, Pk_legacy,   label="Legacy: m_ncdm = 1e-2")
 ax1.loglog(k_hMpc, Pk_split_hi, "--", label="Split: m_ncdm_interacting = 1e-2")
 ax1.loglog(k_hMpc, Pk_split_lo, "-.", label="Split: m_ncdm_interacting = 1e-5")
@@ -211,9 +228,12 @@ print("  max |Split(1e-5)/Legacy(1e-2) - 1| =",
       np.max(np.abs(r_lo - 1.0)))
 
 print("\nInterpretation:")
-print("  - If Split(1e-2) lies close to Legacy(1e-2), the mass override is likely working.")
-print("  - If Split(1e-2) lies on top of Split(1e-5), then m_ncdm_interacting is likely ignored.")
-print("  - If Split(1e-2) behaves like a 1e-5 mass case, then the fallback-to-1e-5 bug is still present.")
+print("  - Watch the terminal for:")
+print("      DEBUG before split(ncdm_props)")
+print("      DEBUG m override flags")
+print("      DEBUG after split(ncdm_props)")
+print("  - If split(1e-2) and split(1e-5) behave the same, m_ncdm_interacting is likely ignored.")
+print("  - If DEBUG after split(ncdm_props) still prints m=1e-5 when you pass 1e-2, the overwrite bug is confirmed.")
 
 cleanup(c_legacy, c_split_hi, c_split_lo)
 print("\nDone.")
