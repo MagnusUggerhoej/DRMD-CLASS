@@ -78,7 +78,7 @@ ncdm_interacting = {
     "N_ncdm_interacting": 1,
     "T_ncdm_interacting": 0.71611,
     "ksi_ncdm_interacting": 0.0,
-    "m_ncdm_interacting": 1e-20,
+    "m_ncdm_interacting": 1e-2,
     "deg_ncdm_interacting": 1.0,
     "ncdm_fluid_approximation": 3,
     "G_eff_ncdm_interacting": 1e-3,

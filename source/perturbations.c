@@ -9139,6 +9139,12 @@ int perturbations_print_variables(double tau,
       theta_idm_drmd = y[ppw->pv->index_pt_theta_idm_drmd];
     }
 
+    if (pba->has_idr_drmd == _TRUE_)
+    {
+      delta_idr_drmd = y[ppw->pv->index_pt_delta_idr_drmd];
+      theta_idr_drmd = y[ppw->pv->index_pt_theta_idr_drmd];
+    }
+
     /* gravitational potentials */
     if (ppt->gauge == synchronous)
     {
@@ -9384,6 +9390,9 @@ int perturbations_print_variables(double tau,
     /* Interacting dark matter */
     class_store_double(dataptr, delta_idm, pba->has_idm, storeidx);
     class_store_double(dataptr, theta_idm, pba->has_idm, storeidx);
+  
+    class_store_double(dataptr, delta_idr_drmd, pba->has_idr_drmd, storeidx);
+    class_store_double(dataptr, theta_idr_drmd, pba->has_idr_drmd, storeidx);
     /* Interacting dark matter (DRMD) */
     class_store_double(dataptr, delta_idm_drmd, pba->has_idm_drmd, storeidx);
     class_store_double(dataptr, theta_idm_drmd, pba->has_idm_drmd, storeidx);
@@ -10462,7 +10471,7 @@ int perturbations_derivs(double tau,
     /** ============================================================
      *  ncdm perturbations (massive neutrinos / WDM / etc.)
      *
-     *  GOAL (to match colleague’s logic):
+     *  GOAL:
      *    - Treat each ncdm species as either:
      *        * free-streaming (“standard”): NO collision/damping terms
      *        * interacting: add RTA-style damping in the Boltzmann hierarchy
@@ -10481,8 +10490,7 @@ int perturbations_derivs(double tau,
      *    (3) In EXACT hierarchy: apply RTA damping for ALL multipoles l>=2
      *        using the same alpha_RTA mapping as colleague:
      *          l=2 -> 0.40, l=3 -> 0.43, l=4 -> 0.46, l=5 -> 0.47, l>=6 -> 0.48
-     *        (This replaces your previous piecewise damping code and matches the colleague.)
-     *    (4) In FLUID approximation: keep the colleague-style behavior:
+     *    (4) In FLUID approximation:
      *        damp only the shear (idx+2) with alpha=0.40 if interacting.
      *
      *  NOTE ABOUT INDEXING:

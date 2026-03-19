@@ -2680,6 +2680,7 @@ int background_output_titles(
   class_store_columntitle(titles, "(.)rho_ur", pba->has_ur);
   class_store_columntitle(titles, "(.)rho_idr", pba->has_idr);
   class_store_columntitle(titles, "(.)rho_idr_drmd", pba->has_idr_drmd);
+  class_store_columntitle(titles, "G_over_aH_drmd", pba->has_idr_drmd && pba->has_idm_drmd);
   class_store_columntitle(titles, "(.)rho_crit", _TRUE_);
   class_store_columntitle(titles, "(.)rho_dcdm", pba->has_dcdm);
   class_store_columntitle(titles, "(.)rho_dr", pba->has_dr);

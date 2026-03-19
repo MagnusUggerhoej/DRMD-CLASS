@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """
-match_tobias_style_three_wrappers.py
+match_tobias_style_three_wrappers_thomas_interacting.py
 
-Purpose:
-- Match Tobias' parameter style as closely as possible
-- Run Magnus (classy_NEDE), Tobias (classy_tobias), and Thomas (classy)
-- Plot delta_ncdm[0] and theta_ncdm[0] from scalar block 0
+Goal:
+- Run the same interacting-ncdm setup in:
+    1) Magnus (classy_NEDE)
+    2) Tobias (classy_tobias)
+    3) Thomas (classy)   <-- now also with interacting neutrino keys
 
 Notes:
-- Uses Tobias-style cosmology choices:
-    * k_output_values = "0.05, 0.002"
-    * N_ur = 2.0328
-    * m_ncdm_interacting = 1e-2
-    * H0/h split by wrapper style
-- Keeps wrapper-specific precision keys
-- Keeps DRMD off only for Magnus/Tobias because Thomas does not know those keys
+- Matches Tobias-style cosmology as closely as practical
+- Uses wrapper-specific H0/h and precision keys
+- Turns DRMD off for Magnus/Tobias only
+- Forces fluid/scalar-field dark energy off for Thomas to avoid double counting
+- Plots delta_ncdm[0] and theta_ncdm[0] from scalar block 0
 """
 
 import numpy as np
@@ -73,20 +72,38 @@ params_general_tobias = {
 
 
 # --------------------------------------------------------------------
-# 1) Tobias-style interacting ncdm sector
+# 1) Interacting ncdm sector
 # --------------------------------------------------------------------
-params_ncdm_interacting = {
-    "quadrature_strategy_ncdm_interacting": 0,
-    "N_momentum_bins_ncdm_interacting": 5,
-    "maximum_q_ncdm_interacting": 15.0,
+# Magnus/Tobias split-style keys
+params_ncdm_interacting_split = {
+    "N_ncdm_standard": 0,
+    "N_ncdm_interacting": 1,
     "T_ncdm_interacting": 0.71611,
     "ksi_ncdm_interacting": 0.0,
-    "N_ncdm_interacting": 1,
-    "deg_ncdm_interacting": 1.0,
     "m_ncdm_interacting": 1e-2,
+    "deg_ncdm_interacting": 1.0,
     "ncdm_fluid_approximation": 3,
     "G_eff_ncdm_interacting": 1e-3,
     "Omega_ncdm_interacting": 0.0,
+    "quadrature_strategy_ncdm_interacting": 0,
+    "N_momentum_bins_ncdm_interacting": 5,
+    "maximum_q_ncdm_interacting": 15.0,
+}
+
+# Thomas interacting keys
+# Assuming Thomas branch supports the Tobias-style interacting interface
+params_ncdm_interacting_thomas = {
+    "N_ncdm_interacting": 1,
+    "T_ncdm_interacting": 0.71611,
+    "ksi_ncdm_interacting": 0.0,
+    "m_ncdm_interacting": 1e-2,
+    "deg_ncdm_interacting": 1.0,
+    "ncdm_fluid_approximation": 3,
+    "G_eff_ncdm_interacting": 1e-3,
+    "Omega_ncdm_interacting": 0.0,
+    "quadrature_strategy_ncdm_interacting": 0,
+    "N_momentum_bins_ncdm_interacting": 5,
+    "maximum_q_ncdm_interacting": 15.0,
 }
 
 
@@ -101,7 +118,7 @@ params_precision_mine = {
 
 params_precision_tobias = {
     "back_integration_stepsize": 7e-4,
-    # "thermo_integration_stepsize": 7e-4,  # Tobias had this commented out
+    # Tobias old script left thermo_integration_stepsize commented out
     "perturb_integration_stepsize": 7e-4,
 }
 
@@ -118,33 +135,41 @@ params_drmd_off_mine = {
 
 params_drmd_off_tobias = {
     "f_idm_drmd": 0.0,
-    "delta_Neff_drmd": 1e-30,  # tends to stabilize Tobias branch
+    "delta_Neff_drmd": 1e-30,   # stabilizer for Tobias branch
     "z_stop": 0.0,
     "G_over_aH_drmd_ini": 0.0,
 }
 
 
 # --------------------------------------------------------------------
-# 4) Final parameter dicts
+# 4) Force dark-energy fluid/scalar-field off in Thomas
+# --------------------------------------------------------------------
+params_thomas_de_off = {
+    "Omega_fld": 0.0,
+    "Omega_scf": 0.0,
+}
+
+
+# --------------------------------------------------------------------
+# 5) Final parameter dicts
 # --------------------------------------------------------------------
 params_mine = dict(params_general_mine_thomas)
 params_mine.update(params_precision_mine)
-params_mine.update(params_ncdm_interacting)
+params_mine.update(params_ncdm_interacting_split)
 params_mine.update(params_drmd_off_mine)
 
 params_tobias = dict(params_general_tobias)
 params_tobias.update(params_precision_tobias)
-params_tobias.update(params_ncdm_interacting)
+params_tobias.update(params_ncdm_interacting_split)
 params_tobias.update(params_drmd_off_tobias)
 
 params_thomas = dict(params_general_mine_thomas)
-params_thomas.update(params_ncdm_interacting)
-# No DRMD keys for Thomas
-# No forced precision keys for Thomas
+params_thomas.update(params_ncdm_interacting_thomas)
+params_thomas.update(params_thomas_de_off)
 
 
 # --------------------------------------------------------------------
-# 5) Runner
+# 6) Runner
 # --------------------------------------------------------------------
 def run_cosmo(ClassObj, params, label, tries=1):
     last_err = None
@@ -168,7 +193,7 @@ def run_cosmo(ClassObj, params, label, tries=1):
 
 
 # --------------------------------------------------------------------
-# 6) Sanity prints
+# 7) Sanity prints
 # --------------------------------------------------------------------
 def sanity(label, p, want_drmd=False):
     print(f"\n[{label}] sanity:")
@@ -180,6 +205,8 @@ def sanity(label, p, want_drmd=False):
     print("  N_ncdm_interacting =", p.get("N_ncdm_interacting"))
     print("  m_ncdm_interacting =", p.get("m_ncdm_interacting"))
     print("  G_eff_ncdm_interacting =", p.get("G_eff_ncdm_interacting"))
+    print("  Omega_fld =", p.get("Omega_fld"))
+    print("  Omega_scf =", p.get("Omega_scf"))
     if want_drmd:
         print("  f_idm_drmd =", p.get("f_idm_drmd"))
         print("  delta_Neff_drmd =", p.get("delta_Neff_drmd"))
@@ -194,7 +221,7 @@ sanity("Thomas", params_thomas, want_drmd=False)
 
 
 # --------------------------------------------------------------------
-# 7) Run models
+# 8) Run models
 # --------------------------------------------------------------------
 model_M = run_cosmo(classy_Magnus.Class, params_mine, "Magnus", tries=1)
 model_T = run_cosmo(classy_Tobias.Class, params_tobias, "Tobias", tries=8)
@@ -202,7 +229,7 @@ model_TH = run_cosmo(ClassThomas, params_thomas, "Thomas", tries=1)
 
 
 # --------------------------------------------------------------------
-# 8) Helpers for perturbations
+# 9) Perturbation helpers
 # --------------------------------------------------------------------
 def ensure_increasing(a, block):
     a = np.array(a, dtype=float)
@@ -233,7 +260,7 @@ def print_scalar_block_info(model, label):
 
 
 # --------------------------------------------------------------------
-# 9) Inspect blocks and select block 0 (matching Tobias' style)
+# 10) Inspect blocks and select block 0
 # --------------------------------------------------------------------
 print_scalar_block_info(model_M, "Magnus")
 print_scalar_block_info(model_T, "Tobias")
@@ -249,7 +276,7 @@ a_TH, pert_TH = ensure_increasing(pert_TH["a"], pert_TH)
 
 
 # --------------------------------------------------------------------
-# 10) Plot delta_ncdm[0] and theta_ncdm[0]
+# 11) Plot delta_ncdm[0] and theta_ncdm[0]
 # --------------------------------------------------------------------
 keys_to_plot = ["delta_ncdm[0]", "theta_ncdm[0]"]
 
@@ -293,7 +320,7 @@ for key in keys_to_plot:
 
 
 # --------------------------------------------------------------------
-# 11) Cleanup
+# 12) Cleanup
 # --------------------------------------------------------------------
 for m in (model_M, model_T, model_TH):
     try:
